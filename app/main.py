@@ -80,6 +80,7 @@ class Alert(BaseModel):
     event_name: str = ""
     severity: str = "0"
     host_name: str = ""
+    host_groups: str = ""
     host_id: str = ""
     host_ip: str = ""
     trigger_id: str = ""
