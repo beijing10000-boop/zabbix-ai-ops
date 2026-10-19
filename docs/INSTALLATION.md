@@ -65,3 +65,14 @@ docker compose logs -f alert-worker
 5. 验证 `/api/v1/auth/me`、配置、AI 测试与日志可用，退出后不能再访问受保护接口。
 
 **从旧 Web 迁移：** 旧版管理员 Token 不再是页面登录方式。仅在故障迁移时可临时设置 `ALLOW_LEGACY_ADMIN_TOKEN=true` 启用旧 API Token；结束后必须关闭。不要删除 `APP_ENCRYPTION_KEY` 或原 SQLite 数据卷。飞书应用的 OAuth 登录和飞书机器人 WebSocket 接收是独立功能，不要求立即把 92 的长连接切换到 93。
+
+
+### 临时 HTTP 登录测试（仅 172.20.200.93）
+飞书开放平台已经登记 `http://172.20.200.93:8088/api/v1/auth/callback` 时，允许在隔离测试网络里临时开启 HTTP 登录：
+```ini
+FEISHU_LOGIN_REDIRECT_URI=http://172.20.200.93:8088/api/v1/auth/callback
+FEISHU_ALLOW_HTTP_TEST=true
+FEISHU_ADMIN_OPEN_IDS=ou_实际管理员OpenID
+ALLOW_LEGACY_ADMIN_TOKEN=false
+```
+这仅用于当前测试服务器；默认仍要求 HTTPS。HTTP 下 OAuth 授权码、会话 Cookie 和 API 响应都没有传输加密，网络中间人可能窃取会话并修改配置，**绝不能作为正式生产部署**。验证后应改成可信 HTTPS 并关闭 `FEISHU_ALLOW_HTTP_TEST`。

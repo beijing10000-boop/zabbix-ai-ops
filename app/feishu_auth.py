@@ -5,7 +5,7 @@ import logging
 import os
 import secrets
 import time
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 
 import httpx
 from fastapi import HTTPException, Request
@@ -29,9 +29,20 @@ def _hash(value):
 
 def _redirect_uri():
     uri = os.getenv("FEISHU_LOGIN_REDIRECT_URI", "").strip()
-    if not uri.startswith("https://") or not uri.endswith("/api/v1/auth/callback"):
-        raise HTTPException(503, "请先配置 HTTPS 飞书登录回调地址 FEISHU_LOGIN_REDIRECT_URI")
-    return uri
+    parts = urlsplit(uri)
+    if (parts.path != "/api/v1/auth/callback" or parts.query or parts.fragment
+            or parts.username or parts.password):
+        raise HTTPException(503, "飞书回调地址格式无效")
+    if parts.scheme == "https" and parts.hostname:
+        return uri
+    if (parts.scheme == "http" and parts.hostname == "172.20.200.93"
+            and parts.port == 8088
+            and os.getenv("FEISHU_ALLOW_HTTP_TEST", "false").lower() == "true"):
+        return uri
+    raise HTTPException(503, "请配置 HTTPS 回调；仅 172.20.200.93 测试环境可显式开启 HTTP")
+
+def _secure_cookie():
+    return urlsplit(_redirect_uri()).scheme == "https"
 
 def _credentials():
     app_id = read_setting("lark_app_id")
@@ -58,7 +69,7 @@ def feishu_login():
         {"app_id":app_id, "redirect_uri":redirect, "state":state})
     response = RedirectResponse(target, status_code=302)
     response.set_cookie(STATE_COOKIE, state, max_age=300, httponly=True,
-                        secure=True, samesite="lax", path="/api/v1/auth")
+                        secure=_secure_cookie(), samesite="lax", path="/api/v1/auth")
     return response
 
 @app.get("/api/v1/auth/callback")
@@ -111,7 +122,7 @@ async def feishu_callback(request:Request, code: str = "", state: str = ""):
                    (_hash(token),open_id,str(profile.get("name") or "管理员")[:100],csrf,int(time.time())+TTL))
         db.execute("INSERT INTO audit(action,key) VALUES (?,?)",("feishu_login",_hash(open_id)[:12]))
     response=RedirectResponse("/", status_code=303)
-    response.set_cookie(COOKIE,token,max_age=TTL,httponly=True,secure=True,samesite="lax",path="/")
+    response.set_cookie(COOKIE,token,max_age=TTL,httponly=True,secure=_secure_cookie(),samesite="lax",path="/")
     response.delete_cookie(STATE_COOKIE,path="/api/v1/auth")
     return response
 
