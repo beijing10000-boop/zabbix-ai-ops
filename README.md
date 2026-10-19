@@ -7,7 +7,7 @@
 - Zabbix 告警：Webhook → Redis/RQ → Zabbix MCP 只读查询 → AI 分析 → 飞书告警卡片。
 - Web 管理：FastAPI + 静态单页管理界面，支持模型、MCP、Webhook、飞书等配置。
 - 安全：初始化管理员 API Token，SQLite 配置存储，Fernet 加密密钥，MCP 工具只读白名单。
-- 已加入开发版：飞书群主动问答与进度卡片更新；研发中：告警消息引用分析、二次审批写操作、多用户权限、升级回滚。
+- 已加入开发版：飞书群主动问答与进度卡片更新；开发版已接入：回复原告警关联事件、指定管理员本人二次确认（默认模拟）；受限 MCP 写入尚待生产验收；研发中：多用户权限、升级回滚。
 
 > **重要：** 此代码根据此前的项目讨论和已生成补丁重新整合，不是从现有生产服务器导出的最终镜像。仍需在隔离环境完成兼容性和安全验证。
 
@@ -40,7 +40,7 @@ curl http://127.0.0.1:8088/healthz
 - [配置说明](docs/CONFIGURATION.md)
 - [常见问题](docs/TROUBLESHOOTING.md)
 - [开发状态](docs/STATUS.md)
-- [后续路线图](docs/ROADMAP.md)\n- [Zabbix Webhook 对接](docs/ZABBIX.md)\n- [飞书机器人配置](docs/FEISHU.md)\n- [升级与备份](docs/UPGRADING.md)\n- [安全说明](SECURITY.md)
+- [后续路线图](docs/ROADMAP.md)\n- [Zabbix Webhook 对接](docs/ZABBIX.md)\n- [飞书机器人配置](docs/FEISHU.md)\n- [升级与备份](docs/UPGRADING.md)\n- [安全说明](SECURITY.md)\n- [回复告警与变更审批](docs/CHANGE_APPROVAL.md)
 
 ## 安全声明
 
