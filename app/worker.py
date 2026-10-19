@@ -85,11 +85,23 @@ async def notify(card):
         if sign_secret:
             timestamp = str(int(time.time()))
             payload.update({"timestamp":timestamp, "sign":feishu_sign(timestamp, sign_secret)})
-        response = await client.post(webhook, json=payload)
-        response.raise_for_status()
-        data = response.json()
-        if data.get("code", data.get("StatusCode", 0)) != 0:
-            raise RuntimeError("Feishu rejected card: "+str(data)[:200])
+        for attempt in range(3):
+            try:
+                response = await client.post(webhook, json=payload)
+                response.raise_for_status()
+            except (httpx.TransportError, httpx.HTTPStatusError) as exc:
+                retryable = isinstance(exc, httpx.TransportError) or (
+                    isinstance(exc, httpx.HTTPStatusError)
+                    and exc.response.status_code >= 500
+                )
+                if not retryable or attempt == 2:
+                    raise
+                await asyncio.sleep((1, 3)[attempt])
+                continue
+            data = response.json()
+            if data.get("code", data.get("StatusCode", 0)) != 0:
+                raise RuntimeError("Feishu rejected card: code=" + str(data.get("code", data.get("StatusCode"))))
+            return
 
 async def handle_alert(event):
     try:
