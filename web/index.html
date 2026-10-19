@@ -8,6 +8,15 @@
 <div class="panel"><h3>运行诊断</h3><p class="hint">可以检查 Redis/任务队列状态，并执行一次只读 MCP 工具发现，不会修改 Zabbix。</p>
 <button onclick="checkStatus()">检查服务</button><button onclick="checkMcp()">测试 MCP 连接</button>
 <pre id="diagnostic" style="white-space:pre-wrap"></pre></div>
+<div class="panel"><h3>AI 测试与直接提问</h3>
+<p class="hint">测试 AI 模型只验证 API 响应，不调用 MCP；直接提问使用与飞书一致的只读 MCP AI Agent，不发送飞书消息、不执行写入。</p>
+<button id="ai-test-btn" onclick="testAi()">测试 AI 模型</button>
+<p id="ai-test-result" aria-live="polite"></p>
+<label for="ask-question">直接提问 Zabbix AI</label>
+<textarea id="ask-question" rows="4" maxlength="3000" placeholder="例如：查询 Zabbix 当前有哪些严重告警，并给出处理建议"></textarea>
+<button id="ask-btn" onclick="askAi()">发送问题</button>
+<pre id="ask-answer" style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:540px;overflow:auto" aria-live="polite"></pre>
+</div>
 <div class="panel"><h3>操作审计</h3><pre id="audit" style="white-space:pre-wrap;max-height:220px;overflow:auto"></pre></div></main>
 <script>
 const names={openai_base_url:'AI API Base URL',openai_model:'AI 模型',openai_api_key:'AI API Key',mcp_url:'Zabbix MCP URL',mcp_token:'MCP Token',lark_app_id:'飞书 App ID',lark_app_secret:'飞书 App Secret',allowed_chat_ids:'允许问答的群 ID',feishu_webhook_url:'告警飞书 Webhook URL',feishu_sign_secret:'飞书 Webhook 签名密钥',feishu_enabled:'告警飞书发送开关 true/false',zabbix_webhook_secret:'Zabbix Webhook 密钥',min_severity:'最低告警级别 0–5',ai_approver_open_ids:'变更审批管理员 Open ID（逗号分隔）',ai_prompt:'旧问答提示词（兼容项）',ai_alert_prompt:'告警分析提示词',ai_qa_prompt:'主动问答提示词'};
@@ -18,5 +27,7 @@ async function load(){try{loaded=await request('/api/v1/settings');document.getE
 async function save(){try{const values={};for(const key of Object.keys(names)){let v=document.getElementById('field-'+key).value;if(v!==loaded[key])values[key]=v}await request('/api/v1/settings',{method:'PUT',body:JSON.stringify({values})});document.getElementById('saved').textContent=' 保存成功';await load()}catch(e){document.getElementById('saved').textContent=' 保存失败: '+e.message}}
 async function checkStatus(){try{document.getElementById('diagnostic').textContent=JSON.stringify(await request('/api/v1/status'),null,2)}catch(e){document.getElementById('diagnostic').textContent=e.message}}
 async function checkMcp(){try{document.getElementById('diagnostic').textContent=JSON.stringify(await request('/api/v1/test/mcp',{method:'POST'}),null,2)}catch(e){document.getElementById('diagnostic').textContent=e.message}}
+async function testAi(){const b=document.getElementById('ai-test-btn'),o=document.getElementById('ai-test-result');b.disabled=true;o.textContent='正在测试 AI 模型...';try{const r=await request('/api/v1/test/ai',{method:'POST'});o.textContent='连接成功。模型：'+r.model+'；返回：'+r.reply}catch(e){o.textContent='连接失败：'+e.message}finally{b.disabled=false}}
+async function askAi(){const b=document.getElementById('ask-btn'),o=document.getElementById('ask-answer'),q=document.getElementById('ask-question').value.trim();if(!q){o.textContent='请输入问题';return}b.disabled=true;o.textContent='正在通过 MCP 查询并进行 AI 分析，请稍候...';try{const r=await request('/api/v1/ask',{method:'POST',body:JSON.stringify({question:q})});o.textContent=r.answer||'未收到回答'}catch(e){o.textContent='问答失败：'+e.message}finally{b.disabled=false}}
 async function audit(){const rows=await request('/api/v1/audit');document.getElementById('audit').textContent=rows.map(x=>x.time+'  '+x.action+'  '+x.key).join('\n')}
 </script></body></html>

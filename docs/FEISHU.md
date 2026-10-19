@@ -33,3 +33,15 @@ docker compose logs -f qa-worker
 在 Web 配置 `feishu_webhook_url`；如果机器人开启签名，则同时配置 `feishu_sign_secret`。告警消息会采用 `interactive` 格式。
 
 请对飞书机器人 Webhook 进行网络和使用范围限制；Webhook URL 本身是敏感凭据。
+
+## 从现有 92 服务器迁移到 93（复用同一个飞书应用）
+
+可以复用现有 App ID、App Secret 和群 ID，但**不能同时让两个独立实例抢同一个应用的长连接消息**。
+
+1. 先在 93 的 Web 管理页使用“测试 AI 模型”和“直接提问”完成 AI + MCP 只读联调；这两项均不依赖飞书连接。
+2. 在 93 部署 `qa-worker`，但暂时不要启动 `feishu-receiver`。
+3. 预定短维护窗口，在 92 上停止**仅负责长连接收消息**的服务（不要贸然停止 Zabbix 告警 Webhook 或 Worker）。
+4. 确认 92 的飞书接收长连接已停止，再在 93 启动 `feishu-receiver`，观察日志并用群聊 @AI 测试。
+5. 若有异常，先停止 93 的 `feishu-receiver`，再恢复 92 的长连接服务；注意消息去重和处理中任务不会跨两套 Redis 自动迁移。
+
+告警自定义 Webhook 不依赖企业应用的 WebSocket，迁移时需单独规划 Zabbix 媒介地址和数据一致性。

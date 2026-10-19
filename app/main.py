@@ -142,6 +142,56 @@ async def test_mcp():
     except Exception as exc:
         raise HTTPException(status_code=502, detail="MCP connection failed: " + type(exc).__name__)
 
+class AskRequest(BaseModel):
+    question: str = Field(min_length=1, max_length=3000)
+
+@app.post("/api/v1/test/ai", dependencies=[Depends(require_admin)])
+async def test_ai_model():
+    """Simple model connectivity test without invoking MCP or chat tools."""
+    from openai import AsyncOpenAI
+    key = read_setting("openai_api_key")
+    model = read_setting("openai_model")
+    base_url = read_setting("openai_base_url")
+    if not all((key, model, base_url)):
+        raise HTTPException(status_code=422, detail="请先保存 AI Base URL、模型及 API Key")
+    try:
+        import asyncio
+        async with AsyncOpenAI(api_key=key, base_url=base_url, timeout=25) as client:
+            response = await asyncio.wait_for(
+                client.responses.create(
+                    model=model,
+                    instructions="你是模型连通性检查服务。请只回复：AI连接成功",
+                    input="测试连接",
+                    max_output_tokens=80,
+                ), timeout=30)
+        return {"ok": True, "model": model,
+                "reply": (response.output_text or "")[:500]}
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning(
+            "AI_MODEL_TEST_FAILED error_type=%s", type(exc).__name__)
+        raise HTTPException(
+            status_code=502,
+            detail="AI 模型调用失败（" + type(exc).__name__ + "），请检查地址、部署名和密钥；详见服务器日志"
+        ) from None
+
+@app.post("/api/v1/ask", dependencies=[Depends(require_admin)])
+async def ask_web(body: AskRequest):
+    """Use the same read-only MCP agent as Feishu; never expose write tools."""
+    from .ai_agent import ask
+    try:
+        import asyncio
+        answer = await asyncio.wait_for(ask(body.question), timeout=180)
+        return {"ok": True, "answer": answer}
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning(
+            "WEB_QA_FAILED error_type=%s", type(exc).__name__)
+        raise HTTPException(
+            status_code=502,
+            detail="问答失败（" + type(exc).__name__ + "），请检查模型与 MCP 服务"
+        ) from None
+
 @app.post("/zabbix", status_code=202)
 def ingest(alert: Alert, authorization: str | None = Header(default=None)):
     secret = read_setting("zabbix_webhook_secret")
