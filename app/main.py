@@ -37,6 +37,7 @@ def connection():
         db.execute("PRAGMA journal_mode=WAL")
         db.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, secret INTEGER NOT NULL)")
         db.execute("CREATE TABLE IF NOT EXISTS audit (id INTEGER PRIMARY KEY AUTOINCREMENT, action TEXT, key TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP)")
+        db.execute("""CREATE TABLE IF NOT EXISTS alert_events (id INTEGER PRIMARY KEY AUTOINCREMENT, event_id TEXT NOT NULL, event_value TEXT NOT NULL, event_name TEXT, host_name TEXT, severity INTEGER, received_at TEXT DEFAULT CURRENT_TIMESTAMP, notify_status TEXT DEFAULT 'queued', ai_status TEXT DEFAULT 'not_required', UNIQUE(event_id,event_value))""")
         db.commit()
         yield db
         db.commit()
@@ -142,6 +143,27 @@ async def enable_write():
         db.execute("INSERT INTO settings(key,value,secret) VALUES ('write_enabled','true',0) ON CONFLICT(key) DO UPDATE SET value='true',secret=0")
         db.execute("INSERT INTO audit(action,key) VALUES ('write_enabled','event_acknowledge')")
     return {"enabled": True, "allowed_action": "event_acknowledge"}
+
+@app.get("/api/v1/alert-stats", dependencies=[Depends(require_admin)])
+def alert_stats():
+    with connection() as db:
+        rows = db.execute("""SELECT event_value, COUNT(*) FROM alert_events GROUP BY event_value""").fetchall()
+        ai = db.execute("SELECT COUNT(*) FROM alert_events WHERE ai_status IN ('pending','running','success','failed')").fetchone()[0]
+    counts = dict(rows)
+    return {"problems": counts.get("1",0), "recoveries": counts.get("0",0), "ai_analyses": ai}
+
+
+@app.get("/api/v1/alert-events", dependencies=[Depends(require_admin)])
+def alert_events(kind: str = "problems", limit: int = 100, offset: int = 0):
+    if kind not in ("problems", "recoveries", "ai"):
+        raise HTTPException(422, "invalid event kind")
+    limit = min(max(limit,1),200)
+    offset = max(offset,0)
+    clause = "event_value='1'" if kind == "problems" else "event_value='0'" if kind == "recoveries" else "ai_status IN ('pending','running','success','failed')"
+    with connection() as db:
+        rows = db.execute(f"""SELECT event_id,event_value,event_name,host_name,severity,received_at,notify_status,ai_status FROM alert_events WHERE {clause} ORDER BY id DESC LIMIT ? OFFSET ?""",(limit,offset)).fetchall()
+    return [{"event_id":r[0],"event_value":r[1],"event_name":r[2],"host_name":r[3],"severity":r[4],"received_at":r[5],"notify_status":r[6],"ai_status":r[7]} for r in rows]
+
 
 @app.get("/api/v1/audit", dependencies=[Depends(require_admin)])
 def audit():
@@ -293,6 +315,10 @@ def ingest(alert: Alert, authorization: str | None = Header(default=None)):
     if not redis.set(key, "queued", nx=True, ex=86400):
         return {"status": "duplicate"}
     try:
+        ai_pending = alert.event_value == "1" and severity >= int(read_setting("ai_min_severity") or "4")
+        with connection() as db:
+            db.execute("""INSERT OR IGNORE INTO alert_events(event_id,event_value,event_name,host_name,severity,ai_status) VALUES(?,?,?,?,?,?)""",
+                       (alert.event_id,alert.event_value,alert.event_name,alert.host_name,severity,"pending" if ai_pending else "not_required"))
         job = Queue("ai-alerts", connection=redis).enqueue("app.worker.process_alert", alert.model_dump(), job_timeout=360)
     except Exception:
         redis.delete(key)
