@@ -98,3 +98,11 @@ def test_severe_analysis_has_detail():
     analyzed=worker.make_card(event,details,analysis=True)
     assert "故障原因" not in str(initial)
     assert "故障原因" in str(analyzed)
+
+def test_alert_card_newlines_are_real():
+    card = worker.make_card({"event_id":"12345","severity":"3","event_value":"1",
+        "host_name":"C15-HX-M","host_ip":"172.20.202.1","event_name":"Link down"})
+    body = card["elements"][0]["text"]["content"]
+    assert "\n" in body
+    assert "\\n" not in body
+    assert body.splitlines()[0] == "**主机名称：** C15-HX-M"
