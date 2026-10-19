@@ -50,22 +50,42 @@ async def analyze(event):
 def safe(value,n):
     return str(value or "未提供").replace("\n"," ")[:n]
 
-def make_card(event, info):
-    sev = str(event.get("severity","0"))
-    human = info.get("human_required", True) is not False
-    content = (f'**主机名称：** {safe(event.get("host_name"),80)}\n'
-               f'**主机 IP：** {safe(event.get("host_ip"),50)}\n'
-               f'**所属分组：** {safe(info.get("host_groups"),140)}\n'
-               f'**事件：** {safe(event.get("event_name"),200)}\n'
-               f'**事件 ID：** {safe(event.get("event_id"),40)}')
-    return {"config":{"wide_screen_mode":True},
-      "header":{"title":{"tag":"plain_text","content":LEVELS.get(sev,"未知")+"｜"+("需人工核验" if human else "AI分析完成")},
-                "template":COLORS.get(sev,"grey")},
-      "elements":[{"tag":"div","text":{"tag":"lark_md","content":content}},
-                  {"tag":"hr"},
-                  *[{"tag":"div","text":{"tag":"lark_md","content":"**"+title+"**\n"+safe(info.get(key),maximum)}}
-                    for title,key,maximum in [("故障原因","cause",100),("处理建议","action",150),("AI 分析","analysis",500)]]]}
-    
+def make_card(event, info=None, *, analysis=False):
+    """Compact operational event card; detailed diagnosis only for severe AI results."""
+    info = info or {}
+    sev = str(event.get("severity", "0"))
+    recovery = str(event.get("event_value", "1")) == "0"
+    lines = [
+        "**主机名称：** " + safe(event.get("host_name"), 80),
+        "**主机 IP：** " + safe(event.get("host_ip"), 50),
+    ]
+    groups = event.get("host_groups") or info.get("host_groups")
+    if groups and str(groups).strip() not in ("待查询", "未查到", "未提供"):
+        lines.append("**所属分组：** " + safe(groups, 140))
+    lines += [
+        "**事件：** " + safe(event.get("event_name"), 200),
+        "**事件 ID：** " + safe(event.get("event_id"), 40),
+        "**事件来源：** 172.20.200.93 转发",
+    ]
+    elements = [{"tag": "div", "text": {"tag": "lark_md", "content": "\\n".join(lines)}}]
+    if analysis and not recovery and sev in ("4", "5"):
+        elements.append({"tag": "hr"})
+        for title, key, size in [("故障原因", "cause", 100),
+                                  ("处理建议", "action", 150),
+                                  ("AI 分析", "analysis", 500)]:
+            value = info.get(key)
+            if value:
+                elements.append({"tag": "div", "text": {
+                    "tag": "lark_md", "content": "**" + title + "**\\n" + safe(value, size)}})
+    title = ("告警已恢复" if recovery else LEVELS.get(sev, "未知") + "｜告警通知")
+    if analysis and not recovery:
+        title = LEVELS.get(sev, "未知") + "｜AI 分析结果"
+    return {"config": {"wide_screen_mode": True},
+            "header": {"title": {"tag": "plain_text", "content": title},
+                       "template": "green" if recovery else COLORS.get(sev, "grey")},
+            "elements": elements}
+
+
 async def notify(card):
     """Send alert cards solely through the configured Feishu enterprise app."""
     if cfg("feishu_enabled").lower() != "true":
@@ -143,7 +163,7 @@ async def handle_alert(event):
         # with another card when the model is unavailable.
         return {"event_id":event["event_id"],"notified":True,"diagnosed":False,"ai_failed":True}
     try:
-        await notify(make_card(event,analysis))
+        await notify(make_card(event,analysis,analysis=True))
         update_event(event, ai_status="success")
     except Exception:
         update_event(event, ai_status="failed")
