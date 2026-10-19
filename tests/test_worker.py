@@ -13,7 +13,7 @@ def test_all_alerts_notified_before_ai_and_severity_gate(monkeypatch):
     async def notify(card):
         sent.append(card)
     async def analyze(event):
-        assert len(sent) == 1  # original alert must already be delivered
+        assert len(sent) == 2  # low-priority card + original severe card
         return {"host_groups":"test","cause":"原因","action":"处理","analysis":"AI诊断","human_required":False}
     monkeypatch.setattr(worker, "notify", notify)
     monkeypatch.setattr(worker, "analyze", analyze)
