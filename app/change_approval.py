@@ -10,6 +10,7 @@ import secrets
 import time
 import logging
 from redis import Redis
+from rq import Queue
 from .main import read_setting, REDIS_URL
 
 log=logging.getLogger(__name__)
@@ -68,8 +69,15 @@ def consume_decision(text, open_id, chat_id):
     result=client.eval(script,1,key,"approved" if yes else "cancelled")
     if result != 1:return "审批已处理或过期，不能重复执行。"
     if no:return "已取消变更，未执行任何修改。"
-    # Do not submit arbitrary write calls to MCP here. A separate authorized
-    # execution worker must validate snapshot and run restricted tools.
-    client.hset("zabbix-ai:approved-review",aid,json.dumps(task))
-    return (f"已完成管理员二次验证，审批单 {aid}。\n"
-            f"当前为安全模拟模式：拟确认事件 {task['event_id']}，**未执行 Zabbix 修改**。")
+    # This toggle is environment-only: the Web UI cannot grant write capability.
+    if os.getenv("AI_WRITE_ENABLED", "false").lower() != "true":
+        return (f"管理员二次确认成功，审批单 {aid}。\\n"
+                f"**模拟执行**：拟确认事件 {task['event_id']}，没有修改 Zabbix。")
+    try:
+        Queue("ai-changes", connection=client).enqueue(
+            "app.change_worker.execute", aid, job_timeout=90, retry=None)
+    except Exception:
+        log.exception("CHANGE_ENQUEUE_FAILED approval=%s", aid)
+        return "审批已记录，但执行任务入队失败；状态不确定，请管理员检查，切勿重复提交。"
+    return (f"管理员二次确认成功，审批单 {aid} 已进入受限变更队列。\\n"
+            "请查看执行日志确认实际结果；本消息不代表修改已成功。")
