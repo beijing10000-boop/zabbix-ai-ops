@@ -21,6 +21,13 @@ BASE_PROMPT = ("你是资深 Zabbix 运维分析师。只允许只读查询。�
 COLORS = {"0":"grey","1":"blue","2":"yellow","3":"orange","4":"red","5":"carmine"}
 LEVELS = {"0":"未分类","1":"信息","2":"警告","3":"一般严重","4":"严重","5":"灾难"}
 
+def feishu_sign(timestamp: str, secret: str) -> str:
+    key = (timestamp + "\n" + secret).encode("utf-8")
+    return base64.b64encode(hmac.new(key, digestmod=hashlib.sha256).digest()).decode()
+
+def alert_instructions(custom: str) -> str:
+    return BASE_PROMPT + ("\n补充要求：" + custom if custom else "")
+
 def cfg(key):
     return read_setting(key)
 
@@ -34,7 +41,7 @@ async def analyze(event):
     # evidence unless it has been fetched by that adapter.
     from .mcp_client import gather_evidence
     evidence = await gather_evidence(event)
-    prompt = cfg("ai_prompt") or BASE_PROMPT
+    prompt = alert_instructions(cfg("ai_alert_prompt"))
     async with AsyncOpenAI(api_key=key, base_url=url, timeout=120) as client:
         result = await client.responses.create(model=model, instructions=prompt,
                         input=json.dumps({"event":event,"mcp_evidence":evidence},ensure_ascii=False))
@@ -77,20 +84,26 @@ async def notify(card):
         sign_secret = cfg("feishu_sign_secret")
         if sign_secret:
             timestamp = str(int(time.time()))
-            digest = hmac.new((timestamp + "\\n" + sign_secret).encode(),
-                              digestmod=hashlib.sha256).digest()
-            payload.update({"timestamp":timestamp,
-                            "sign":base64.b64encode(digest).decode()})
+            payload.update({"timestamp":timestamp, "sign":feishu_sign(timestamp, sign_secret)})
         response = await client.post(webhook, json=payload)
         response.raise_for_status()
         data = response.json()
         if data.get("code", data.get("StatusCode", 0)) != 0:
             raise RuntimeError("Feishu rejected card: "+str(data)[:200])
 
+async def handle_alert(event):
+    try:
+        info = await analyze(event)
+    except Exception as exc:
+        log.exception("ALERT_ANALYZE_FAILED event_id=%s", event.get("event_id"))
+        info = {"cause":"AI 分析失败，请人工处理", "action":"请直接查看 Zabbix 告警详情",
+                "analysis":"AI 服务异常：" + type(exc).__name__,
+                "human_required":True, "host_groups":"未查到"}
+    await notify(make_card(event, info))
+    return {"event_id":event["event_id"], "diagnosed":True}
+
 def process_alert(event):
-    info = asyncio.run(analyze(event))
-    asyncio.run(notify(make_card(event,info)))
-    return {"event_id":event["event_id"],"diagnosed":True}
+    return asyncio.run(handle_alert(event))
 
 if __name__ == "__main__":
     redis = Redis.from_url(os.getenv("REDIS_URL","redis://redis:6379/0"))
