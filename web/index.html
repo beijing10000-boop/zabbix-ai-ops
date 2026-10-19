@@ -10,7 +10,7 @@
 <pre id="diagnostic" style="white-space:pre-wrap"></pre></div>
 <div class="panel"><h3>操作审计</h3><pre id="audit" style="white-space:pre-wrap;max-height:220px;overflow:auto"></pre></div></main>
 <script>
-const names={openai_base_url:'AI API Base URL',openai_model:'AI 模型',openai_api_key:'AI API Key',mcp_url:'Zabbix MCP URL',mcp_token:'MCP Token',lark_app_id:'飞书 App ID',lark_app_secret:'飞书 App Secret',allowed_chat_ids:'允许问答的群 ID',feishu_webhook_url:'告警飞书 Webhook URL',feishu_sign_secret:'飞书 Webhook 签名密钥',feishu_enabled:'告警飞书发送开关 true/false',zabbix_webhook_secret:'Zabbix Webhook 密钥',min_severity:'最低告警级别 0–5',ai_prompt:'AI 提示词'};
+const names={openai_base_url:'AI API Base URL',openai_model:'AI 模型',openai_api_key:'AI API Key',mcp_url:'Zabbix MCP URL',mcp_token:'MCP Token',lark_app_id:'飞书 App ID',lark_app_secret:'飞书 App Secret',allowed_chat_ids:'允许问答的群 ID',feishu_webhook_url:'告警飞书 Webhook URL',feishu_sign_secret:'飞书 Webhook 签名密钥',feishu_enabled:'告警飞书发送开关 true/false',zabbix_webhook_secret:'Zabbix Webhook 密钥',min_severity:'最低告警级别 0–5',ai_approver_open_ids:'变更审批管理员 Open ID（逗号分隔）',ai_prompt:'AI 提示词'};
 const sensitive=new Set(['openai_api_key','mcp_token','lark_app_secret','feishu_webhook_url','feishu_sign_secret','zabbix_webhook_secret']);
 let loaded={};const head=()=>({'Authorization':'Bearer '+document.getElementById('token').value,'Content-Type':'application/json'});
 async function request(path,opts={}){const r=await fetch(path,{...opts,headers:head()});const j=await r.json();if(!r.ok)throw Error(j.detail||r.status);return j}
