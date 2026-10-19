@@ -20,7 +20,7 @@ MASTER_KEY = os.getenv("APP_ENCRYPTION_KEY", "")
 ADMIN_TOKEN = os.getenv("ADMIN_API_TOKEN", "")
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 app = FastAPI(title="Zabbix AI Ops", version="0.1.0")
-SENSITIVE = {"openai_api_key", "mcp_token", "lark_app_secret", "feishu_webhook_url", "zabbix_webhook_secret"}
+SENSITIVE = {"openai_api_key", "mcp_token", "lark_app_secret", "feishu_webhook_url", "feishu_sign_secret", "zabbix_webhook_secret"}
 ALLOWED = SENSITIVE | {"openai_base_url", "openai_model", "mcp_url", "lark_app_id", "allowed_chat_ids", "min_severity", "ai_prompt", "feishu_enabled"}
 DEFAULTS = {"min_severity": "3", "feishu_enabled": "false"}
 
