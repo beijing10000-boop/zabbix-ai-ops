@@ -107,6 +107,27 @@ def audit():
         rows = db.execute("SELECT id,action,key,created_at FROM audit ORDER BY id DESC LIMIT 100").fetchall()
     return [{"id": r[0], "action": r[1], "key": r[2], "time": r[3]} for r in rows]
 
+@app.get("/api/v1/logs", dependencies=[Depends(require_admin)])
+def logs_overview():
+    """Sanitized operational log overview; never return raw exception traces."""
+    from rq.registry import FailedJobRegistry
+    result={"failed_jobs":[], "queues":{}, "note":"详细容器日志请使用 docker compose logs 查看"}
+    try:
+        redis=Redis.from_url(REDIS_URL,socket_connect_timeout=3,socket_timeout=5)
+        for name in ("ai-alerts","ai-questions","ai-changes"):
+            queue=Queue(name,connection=redis)
+            result["queues"][name]={"queued":len(queue),
+                                     "failed":len(FailedJobRegistry(name,connection=redis))}
+            ids=FailedJobRegistry(name,connection=redis).get_job_ids()[:20]
+            for jid in ids:
+                result["failed_jobs"].append({"queue":name,"id":jid})
+    except Exception:
+        result["error"]="队列日志暂不可用，请查看 Redis 状态"
+    with connection() as db:
+        rows=db.execute("SELECT id,action,key,created_at FROM audit ORDER BY id DESC LIMIT 100").fetchall()
+    result["audit"]=[{"id":r[0],"action":r[1],"key":r[2],"time":r[3]} for r in rows]
+    return result
+
 @app.get("/api/v1/status", dependencies=[Depends(require_admin)])
 def runtime_status():
     result = {"database": "ok", "redis": "unknown", "queues": {}, "version": app.version}
