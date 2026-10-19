@@ -69,7 +69,7 @@ def consume_decision(text, open_id, chat_id):
     result=client.eval(script,1,key,"approved" if yes else "cancelled")
     if result != 1:return "审批已处理或过期，不能重复执行。"
     if no:return "已取消变更，未执行任何修改。"
-    # This toggle is environment-only: the Web UI cannot grant write capability.
+    # Live Web setting controls execution; the AI never receives write tools.
     if read_setting("write_enabled") != "true":
         return (f"管理员二次确认成功，审批单 {aid}。\n"
                 f"**模拟执行**：拟确认事件 {task['event_id']}，没有修改 Zabbix。")
