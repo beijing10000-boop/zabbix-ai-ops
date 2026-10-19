@@ -43,7 +43,7 @@ def request_change(text, open_id, chat_id):
             f"仅管理员本人可以在 5 分钟内回复：\n"
             f"`确认执行 {aid}`\n"
             f"或 `取消执行 {aid}`\n"
-            "**当前默认模拟模式，不实际修改 Zabbix。**")
+            "**执行前需系统管理员在 Web 开启写入权限，并进行二次确认。**")
 
 def consume_decision(text, open_id, chat_id):
     text=text.strip()
@@ -70,7 +70,7 @@ def consume_decision(text, open_id, chat_id):
     if result != 1:return "审批已处理或过期，不能重复执行。"
     if no:return "已取消变更，未执行任何修改。"
     # This toggle is environment-only: the Web UI cannot grant write capability.
-    if os.getenv("AI_WRITE_ENABLED", "false").lower() != "true":
+    if read_setting("write_enabled") != "true":
         return (f"管理员二次确认成功，审批单 {aid}。\n"
                 f"**模拟执行**：拟确认事件 {task['event_id']}，没有修改 Zabbix。")
     try:
