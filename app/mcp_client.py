@@ -27,10 +27,12 @@ async def gather_evidence(event):
             listed = await session.list_tools()
             available = {x.name for x in listed.tools}
             evidence = {}
-            for name, arguments in (
-                ("event_get", {"eventids":[event["event_id"]],"output":"extend"}),
-                ("host_get", {"hostids":[event["host_id"]],"output":"extend","selectGroups":"extend"})
-            ):
+            queries = []
+            if str(event.get("event_id", "")).isdigit():
+                queries.append(("event_get", {"eventids":[event["event_id"]],"output":"extend"}))
+            if str(event.get("host_id", "")).isdigit():
+                queries.append(("host_get", {"hostids":[event["host_id"]],"output":"extend","selectGroups":"extend"}))
+            for name, arguments in queries:
                 if name not in READ_TOOLS or name not in available:
                     continue
                 try:
