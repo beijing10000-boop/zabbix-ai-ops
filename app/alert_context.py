@@ -4,7 +4,7 @@ import re
 from .feishu_client import ROOT, get_token, request
 import httpx
 
-EVENT_RE = re.compile(r"(?:事件\s*ID|Event\s*ID|event_id|事件ID)\s*[：:=\\" ]+\s*(\d{3,20})",re.I)
+EVENT_RE = re.compile(r'(?:事件\s*ID|Event\s*ID|event_id|事件ID)\s*[：:=" ]+\s*(\d{3,20})',re.I)
 def extract_event_id(content):
     if not content: return None
     if isinstance(content,dict):
