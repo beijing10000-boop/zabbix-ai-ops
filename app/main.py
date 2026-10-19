@@ -20,9 +20,9 @@ MASTER_KEY = os.getenv("APP_ENCRYPTION_KEY", "")
 ADMIN_TOKEN = os.getenv("ADMIN_API_TOKEN", "")
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 app = FastAPI(title="Zabbix AI Ops", version="0.1.0")
-SENSITIVE = {"openai_api_key", "mcp_token", "lark_app_secret", "feishu_webhook_url", "feishu_sign_secret", "zabbix_webhook_secret"}
-ALLOWED = SENSITIVE | {"openai_base_url", "openai_model", "mcp_url", "lark_app_id", "allowed_chat_ids", "min_severity", "ai_prompt", "ai_alert_prompt", "ai_qa_prompt", "feishu_enabled", "ai_approver_open_ids", "web_protocol", "web_public_host"}
-DEFAULTS = {"min_severity": "3", "feishu_enabled": "false", "web_protocol": "http"}
+SENSITIVE = {"openai_api_key", "mcp_token", "lark_app_secret", "feishu_webhook_url", "feishu_sign_secret", "zabbix_webhook_secret", "write_mcp_token"}
+ALLOWED = SENSITIVE | {"openai_base_url", "openai_model", "mcp_url", "lark_app_id", "allowed_chat_ids", "min_severity", "ai_prompt", "ai_alert_prompt", "ai_qa_prompt", "feishu_enabled", "ai_approver_open_ids", "web_protocol", "web_public_host", "write_mcp_url", "write_enabled"}
+DEFAULTS = {"min_severity": "3", "feishu_enabled": "false", "web_protocol": "http", "write_enabled": "false"}
 
 def cipher():
     if not MASTER_KEY:
@@ -91,6 +91,8 @@ def update_settings(body: SettingsUpdate):
         raise HTTPException(status_code=422, detail=f"invalid settings: {sorted(invalid)}")
     if any(not isinstance(v, str) or len(v) > 12000 for v in body.values.values()):
         raise HTTPException(status_code=422, detail="invalid value")
+    if "write_enabled" in body.values:
+        raise HTTPException(422, "请通过写入权限开关专用接口进行启用或关闭")
     with connection() as db:
         for key, val in body.values.items():
             if key in SENSITIVE and val == "********":
@@ -100,6 +102,40 @@ def update_settings(body: SettingsUpdate):
                        (key, stored, int(key in SENSITIVE)))
             db.execute("INSERT INTO audit(action,key) VALUES(?,?)", ("settings_update", key))
     return {"ok": True}
+
+@app.post("/api/v1/write/disable", dependencies=[Depends(require_admin)])
+def disable_write():
+    with connection() as db:
+        db.execute("INSERT INTO settings(key,value,secret) VALUES ('write_enabled','false',0) ON CONFLICT(key) DO UPDATE SET value='false',secret=0")
+        db.execute("INSERT INTO audit(action,key) VALUES ('write_disabled','event_acknowledge')")
+    return {"enabled": False}
+
+@app.post("/api/v1/write/enable", dependencies=[Depends(require_admin)])
+async def enable_write():
+    """Validate independent write MCP tools before enabling acknowledgement."""
+    from mcp import ClientSession
+    from mcp.client.streamable_http import streamablehttp_client
+    url, token = read_setting("write_mcp_url"), read_setting("write_mcp_token")
+    if not url or not token:
+        raise HTTPException(422, "请先保存独立的写入 MCP URL 和 Token")
+    if url == read_setting("mcp_url") and token == read_setting("mcp_token"):
+        raise HTTPException(409, "写入 MCP 与只读 MCP 不允许使用相同的地址及令牌组合")
+    try:
+        async with streamablehttp_client(url, headers={"Authorization": "Bearer " + token}, timeout=10) as (rd, wr, _):
+            async with ClientSession(rd, wr) as session:
+                await session.initialize()
+                listed = await session.list_tools()
+        tool = next((t for t in listed.tools if t.name == "event_acknowledge"), None)
+        if not tool or not {"eventids","action"}.issubset((tool.inputSchema or {}).get("properties",{})):
+            raise HTTPException(409, "写入 MCP 未提供兼容的 event_acknowledge 工具")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(502, "写入 MCP 工具检测失败：" + type(exc).__name__) from None
+    with connection() as db:
+        db.execute("INSERT INTO settings(key,value,secret) VALUES ('write_enabled','true',0) ON CONFLICT(key) DO UPDATE SET value='true',secret=0")
+        db.execute("INSERT INTO audit(action,key) VALUES ('write_enabled','event_acknowledge')")
+    return {"enabled": True, "allowed_action": "event_acknowledge"}
 
 @app.get("/api/v1/audit", dependencies=[Depends(require_admin)])
 def audit():
