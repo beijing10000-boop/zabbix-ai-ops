@@ -11,7 +11,7 @@ services:
   web:
     build: .
     restart: unless-stopped
-    ports: ["127.0.0.1:8088:8088"]
+    ports: ["${WEB_BIND_IP:-172.20.200.93}:8088:8088"]
     environment:
       <<: *app-env
       ADMIN_API_TOKEN: ${ADMIN_API_TOKEN:?set admin token}
