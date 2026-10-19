@@ -78,3 +78,23 @@ def test_feishu_reply_card_uses_original_message(monkeypatch):
     assert sent[0][1].endswith("/im/v1/messages/om_source/reply")
     assert sent[0][2]["reply_in_thread"] is False
     assert json.loads(sent[0][2]["content"])["header"]["title"]["content"]=="AI 分析中"
+
+def test_compact_alert_card_and_recovery():
+    event={"event_id":"6056231","severity":"2","event_value":"1",
+           "host_name":"DESKTOP","host_ip":"172.20.108.2","host_groups":"Office"}
+    card=worker.make_card(event)
+    body=str(card)
+    assert "Office" in body and "172.20.200.93 转发" in body
+    assert "故障原因" not in body and "处理建议" not in body
+    assert "AI 分析" not in body and "需人工核验" not in body
+    recovered=worker.make_card({**event,"event_value":"0"})
+    assert recovered["header"]["template"]=="green"
+    assert "告警已恢复" in recovered["header"]["title"]["content"]
+
+def test_severe_analysis_has_detail():
+    event={"event_id":"6056232","severity":"4","event_value":"1"}
+    details={"cause":"CPU 排队","action":"核对进程","analysis":"指标趋势"}
+    initial=worker.make_card(event,details)
+    analyzed=worker.make_card(event,details,analysis=True)
+    assert "故障原因" not in str(initial)
+    assert "故障原因" in str(analyzed)
