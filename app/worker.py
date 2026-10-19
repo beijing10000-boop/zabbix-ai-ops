@@ -94,18 +94,46 @@ async def notify(card):
         raise RuntimeError("企业应用告警有群发送失败，数量：" + str(len(errors)))
 
 
+def initial_info(event):
+    recovery = str(event.get("event_value", "1")) == "0"
+    return {
+        "host_groups": "待查询",
+        "cause": "Zabbix 告警恢复" if recovery else "Zabbix 监控触发告警",
+        "action": "可查看 Zabbix 事件详情" if recovery else "请检查告警主机及监控项",
+        "analysis": "恢复通知，无需 AI 分析" if recovery else "原始事件通知；达到 AI 分析门槛后另发分析结果",
+        "human_required": not recovery,
+    }
+
+
 async def handle_alert(event):
-    ai_failed = False
+    # Delivery and AI diagnostics are separate: do not wait for the model
+    # before sending the initial alert.
+    severity = int(event.get("severity", "0"))
+    recovery = str(event.get("event_value", "1")) == "0"
+    info = initial_info(event)
     try:
-        info = await analyze(event)
+        await notify(make_card(event, info))
+    except Exception:
+        log.exception("INITIAL_ALERT_DELIVERY_FAILED event_id=%s", event.get("event_id"))
+        raise
+    threshold = int(cfg("ai_min_severity") or "4")
+    if recovery or severity < threshold:
+        return {"event_id":event["event_id"], "notified":True, "diagnosed":False, "ai_skipped":True}
+    try:
+        analysis = await analyze(event)
     except Exception as exc:
-        ai_failed = True
-        log.exception("ALERT_ANALYZE_FAILED event_id=%s", event.get("event_id"))
-        info = {"cause":"AI 分析失败，请人工处理", "action":"请直接查看 Zabbix 告警详情",
-                "analysis":"AI 服务异常：" + type(exc).__name__,
-                "human_required":True, "host_groups":"未查到"}
-    await notify(make_card(event, info))
-    return {"event_id":event["event_id"], "diagnosed":not ai_failed, "ai_failed":ai_failed}
+        log.warning("ALERT_ANALYZE_FAILED event_id=%s error=%s", event.get("event_id"), type(exc).__name__)
+        # Initial notification already arrived. Avoid flooding the same group
+        # with another card when the model is unavailable.
+        return {"event_id":event["event_id"],"notified":True,"diagnosed":False,"ai_failed":True}
+    try:
+        await notify(make_card(event,analysis))
+    except Exception:
+        log.exception("AI_ANALYSIS_DELIVERY_FAILED event_id=%s",event.get("event_id"))
+        raise
+    return {"event_id":event["event_id"],"notified":True,"diagnosed":True}
+
+
 
 def process_alert(event):
     return asyncio.run(handle_alert(event))
