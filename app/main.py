@@ -109,6 +109,39 @@ def audit():
         rows = db.execute("SELECT id,action,key,created_at FROM audit ORDER BY id DESC LIMIT 100").fetchall()
     return [{"id": r[0], "action": r[1], "key": r[2], "time": r[3]} for r in rows]
 
+@app.get("/api/v1/status", dependencies=[Depends(require_admin)])
+def runtime_status():
+    result = {"database": "ok", "redis": "unknown", "queues": {}, "version": app.version}
+    try:
+        client = Redis.from_url(REDIS_URL, socket_connect_timeout=2, socket_timeout=3)
+        result["redis"] = "ok" if client.ping() else "unavailable"
+        for q in ("ai-alerts", "ai-questions"):
+            result["queues"][q] = len(Queue(q, connection=client))
+    except Exception:
+        result["redis"] = "unavailable"
+    return result
+
+@app.post("/api/v1/test/mcp", dependencies=[Depends(require_admin)])
+async def test_mcp():
+    """Read-only tool discovery. Never execute MCP write operations."""
+    endpoint = read_setting("mcp_url")
+    if not endpoint:
+        raise HTTPException(status_code=422, detail="please configure MCP URL first")
+    from mcp import ClientSession
+    from mcp.client.streamable_http import streamablehttp_client
+    from .ai_agent import ALLOWED_TOOLS
+    token = read_setting("mcp_token")
+    headers = {"Authorization": "Bearer " + token} if token else {}
+    try:
+        async with streamablehttp_client(endpoint, headers=headers, timeout=10) as (read, write, _):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                tools = await session.list_tools()
+                allowed = sorted(t.name for t in tools.tools if t.name in ALLOWED_TOOLS)
+                return {"ok": True, "read_only_tools": allowed, "count": len(allowed)}
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail="MCP connection failed: " + type(exc).__name__)
+
 @app.post("/zabbix", status_code=202)
 def ingest(alert: Alert, authorization: str | None = Header(default=None)):
     secret = read_setting("zabbix_webhook_secret")
