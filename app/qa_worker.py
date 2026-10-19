@@ -7,6 +7,7 @@ from redis import Redis
 from rq import Worker, Queue
 from .ai_agent import ask
 from .alert_context import resolve_replied_event
+from .conversation_context import remember, recall, format_context
 from .change_approval import request_change, consume_decision
 from .feishu_client import reply_card, send_card, update_card, send_text
 
@@ -32,8 +33,9 @@ async def execute(chat_id, question, message_id, sender_open_id=None, parent_id=
         log.exception("FEISHU_PROGRESS_FAILED message_id=%s", message_id)
 
     try:
-        context = ""
-        if parent_id:
+        stored = recall(chat_id, parent_id)
+        context = format_context(stored)
+        if parent_id and not stored:
             try:
                 event_id = await resolve_replied_event(parent_id, chat_id)
                 if event_id:
@@ -42,6 +44,7 @@ async def execute(chat_id, question, message_id, sender_open_id=None, parent_id=
             except Exception:
                 log.exception("FEISHU_REPLY_LOOKUP_FAILED message_id=%s", message_id)
         result = await ask(question, context)
+        remember(chat_id, message_id, progress_id, question, result, stored)
         if progress_id:
             try:
                 await update_card(progress_id, "AI 分析完成", result)
