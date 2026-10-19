@@ -37,7 +37,11 @@ def on_message(data: P2ImMessageReceiveV1):
     if not redis.set(key,"queued",nx=True,ex=86400):
         log.info("FEISHU_DUPLICATE message_id=%s",msg_id)
         return
-    sender_id = getattr(getattr(sender,"sender_id",None),"open_id",None)\n    parent_id = getattr(message,"parent_id",None) or getattr(message,"root_id",None)\n    try:\n        queue.enqueue("app.qa_worker.process_question", message.chat_id,question[:3000],msg_id,\n                      sender_id, parent_id,
+    sender_id = getattr(getattr(sender,"sender_id",None),"open_id",None)
+    parent_id = getattr(message,"parent_id",None) or getattr(message,"root_id",None)
+    try:
+        queue.enqueue("app.qa_worker.process_question", message.chat_id,question[:3000],msg_id,
+                      sender_id, parent_id,
                       job_timeout=360)
         log.warning("FEISHU_QUEUED message_id=%s",msg_id)
     except Exception:
