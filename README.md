@@ -1,6 +1,6 @@
 # Zabbix AI Ops
 
-**Zabbix + AI + Feishu** 运维集成平台，当前为 **v0.1 开发预览版**，仓库为 Private。请勿覆盖现有生产部署。
+**Zabbix + AI + Feishu** 运维集成平台，当前为 **v0.1 开发预览版**，仓库目前为 Public。请勿覆盖现有生产部署。
 
 ## 项目定位
 
@@ -30,7 +30,8 @@ curl http://127.0.0.1:8088/healthz
 | Web 界面 | `web/index.html` | 开发版 |
 | AI 告警 Worker | `app/worker.py` | 开发版 |
 | Zabbix MCP 只读查询 | `app/mcp_client.py` | 开发版，待联调 |
-| 飞书问答接收与 Worker | `app/feishu_bot.py`、`app/qa_worker.py` | 开发版，待端到端联调 |\n| 只读 MCP 工具问答 | `app/ai_agent.py` | 开发版 |
+| 飞书问答接收与 Worker | `app/feishu_bot.py`、`app/qa_worker.py` | 开发版，待端到端联调 |
+| 只读 MCP 工具问答 | `app/ai_agent.py` | 开发版 |
 | Docker Compose | `docker-compose.yml` | 开发版 |
 | pytest/CI | `tests/`, `.github/workflows/` | 基础测试 |
 
@@ -51,4 +52,4 @@ curl http://127.0.0.1:8088/healthz
 
 **不要上传生产密钥和配置。** 勿提交 `.env`、Token、数据库、Webhooks 或运行日志；禁止开放 MCP 写入到普通聊天会话。尚未实现完整的 RBAC 和审批执行器。
 
-当前仓库暂未选定开源 License，仅供获授权的私有仓库成员使用。
+当前仓库暂未选定开源 License，目前公开展示，尚未选定开源许可；未经授权不得假定可再分发。

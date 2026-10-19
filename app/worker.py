@@ -98,21 +98,29 @@ async def notify(card):
                     raise
                 await asyncio.sleep((1, 3)[attempt])
                 continue
-            data = response.json()
+            try:
+                data = response.json()
+            except ValueError as exc:
+                snippet = response.text[:200]
+                # Never log secret-bearing payloads or HTML returned by unknown proxies.
+                log.error("FEISHU_INVALID_JSON status=%s body_length=%s", response.status_code, len(snippet))
+                raise RuntimeError("飞书返回非 JSON 响应（前 200 字符已省略以保护敏感信息）") from exc
             if data.get("code", data.get("StatusCode", 0)) != 0:
                 raise RuntimeError("Feishu rejected card: code=" + str(data.get("code", data.get("StatusCode"))))
             return
 
 async def handle_alert(event):
+    ai_failed = False
     try:
         info = await analyze(event)
     except Exception as exc:
+        ai_failed = True
         log.exception("ALERT_ANALYZE_FAILED event_id=%s", event.get("event_id"))
         info = {"cause":"AI 分析失败，请人工处理", "action":"请直接查看 Zabbix 告警详情",
                 "analysis":"AI 服务异常：" + type(exc).__name__,
                 "human_required":True, "host_groups":"未查到"}
     await notify(make_card(event, info))
-    return {"event_id":event["event_id"], "diagnosed":True}
+    return {"event_id":event["event_id"], "diagnosed":not ai_failed, "ai_failed":ai_failed}
 
 def process_alert(event):
     return asyncio.run(handle_alert(event))

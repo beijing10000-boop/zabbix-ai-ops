@@ -27,6 +27,6 @@ def test_ai_failure_still_notifies(monkeypatch):
     monkeypatch.setattr(worker, "analyze", broken)
     monkeypatch.setattr(worker, "notify", notify)
     result = asyncio.run(worker.handle_alert({"event_id":"12345","severity":"4"}))
-    assert result["diagnosed"] is True
+    assert result == {"event_id":"12345","diagnosed":False,"ai_failed":True}
     assert len(sent) == 1
     assert "AI 分析失败" in str(sent[0])
