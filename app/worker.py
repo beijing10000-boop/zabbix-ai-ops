@@ -77,7 +77,7 @@ def make_card(event, info=None, *, analysis=False):
             if value:
                 elements.append({"tag": "div", "text": {
                     "tag": "lark_md", "content": "**" + title + "**\\n" + safe(value, size)}})
-    title = ("告警已恢复" if recovery else LEVELS.get(sev, "未知") + "｜告警通知")
+    title = ("告警已恢复" if recovery else LEVELS.get(sev, "未知"))
     if analysis and not recovery:
         title = LEVELS.get(sev, "未知") + "｜AI 分析结果"
     return {"config": {"wide_screen_mode": True},
