@@ -21,3 +21,12 @@ def test_secret_masking():
 def test_webhook_unauthorized():
     payload={"event_id":"123"}
     assert client.post("/zabbix",json=payload).status_code == 401
+
+def test_runtime_status_requires_admin():
+    assert client.get("/api/v1/status").status_code == 401
+    result = client.get("/api/v1/status", headers={"Authorization": "Bearer test-admin"})
+    assert result.status_code == 200
+    assert "queues" in result.json()
+
+def test_mcp_test_requires_admin():
+    assert client.post("/api/v1/test/mcp").status_code == 401
