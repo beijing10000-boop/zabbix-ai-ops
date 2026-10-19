@@ -60,3 +60,21 @@ def test_enterprise_app_alert_notifier(monkeypatch):
     monkeypatch.setattr(feishu_client, "request", request)
     asyncio.run(worker.notify({"header": {"title": {"content": "test"}}}))
     assert sent == ["oc_test_1", "oc_test_2"]
+
+def test_feishu_reply_card_uses_original_message(monkeypatch):
+    from app import feishu_client
+    import json
+    sent = []
+    async def fake_token(client):
+        return "test-token"
+    async def fake_request(client, method, url, token=None, **kwargs):
+        sent.append((method, url, kwargs["json"]))
+        return {"data":{"message_id":"om_reply"}}
+    monkeypatch.setattr(feishu_client,"get_token",fake_token)
+    monkeypatch.setattr(feishu_client,"request",fake_request)
+    result=asyncio.run(feishu_client.reply_card("om_source","AI 分析中","正在分析"))
+    assert result=="om_reply"
+    assert sent[0][0]=="POST"
+    assert sent[0][1].endswith("/im/v1/messages/om_source/reply")
+    assert sent[0][2]["reply_in_thread"] is False
+    assert json.loads(sent[0][2]["content"])["header"]["title"]["content"]=="AI 分析中"
