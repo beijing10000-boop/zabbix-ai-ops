@@ -73,3 +73,9 @@ def test_restricted_write_auth_and_enable_guards(monkeypatch):
     from app import main
     monkeypatch.setattr(main,"read_setting",lambda k:"" if k.startswith("write_") else "different")
     assert client.post("/api/v1/write/enable",headers=h).status_code == 422
+
+def test_beijing_time_handles_sqlite_utc():
+    from app.main import beijing_time
+    assert beijing_time("2026-10-19 10:42:16") == "2026-10-19 18:42:16"
+    assert beijing_time("2026-10-19T10:42:16Z") == "2026-10-19 18:42:16"
+    assert beijing_time(None) is None
