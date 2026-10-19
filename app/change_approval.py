@@ -71,7 +71,7 @@ def consume_decision(text, open_id, chat_id):
     if no:return "已取消变更，未执行任何修改。"
     # This toggle is environment-only: the Web UI cannot grant write capability.
     if os.getenv("AI_WRITE_ENABLED", "false").lower() != "true":
-        return (f"管理员二次确认成功，审批单 {aid}。\\n"
+        return (f"管理员二次确认成功，审批单 {aid}。\n"
                 f"**模拟执行**：拟确认事件 {task['event_id']}，没有修改 Zabbix。")
     try:
         Queue("ai-changes", connection=client).enqueue(
@@ -79,5 +79,5 @@ def consume_decision(text, open_id, chat_id):
     except Exception:
         log.exception("CHANGE_ENQUEUE_FAILED approval=%s", aid)
         return "审批已记录，但执行任务入队失败；状态不确定，请管理员检查，切勿重复提交。"
-    return (f"管理员二次确认成功，审批单 {aid} 已进入受限变更队列。\\n"
+    return (f"管理员二次确认成功，审批单 {aid} 已进入受限变更队列。\n"
             "请查看执行日志确认实际结果；本消息不代表修改已成功。")
