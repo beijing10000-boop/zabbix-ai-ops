@@ -202,33 +202,54 @@ class AskRequest(BaseModel):
 
 @app.post("/api/v1/test/ai", dependencies=[Depends(require_admin)])
 async def test_ai_model():
-    """Simple model connectivity test without invoking MCP or chat tools."""
-    from openai import AsyncOpenAI
+    """Test model availability without tools; report Azure errors without leaking credentials."""
+    import asyncio
+    import logging
+    import time
+    from openai import AsyncOpenAI, APIStatusError, APITimeoutError, APIConnectionError, RateLimitError
     key = read_setting("openai_api_key")
     model = read_setting("openai_model")
     base_url = read_setting("openai_base_url")
     if not all((key, model, base_url)):
         raise HTTPException(status_code=422, detail="请先保存 AI Base URL、模型及 API Key")
+    started = time.monotonic()
     try:
-        import asyncio
-        async with AsyncOpenAI(api_key=key, base_url=base_url, timeout=25) as client:
+        # Disable SDK retries here: a 429 is diagnostic, not an invitation to retry.
+        async with AsyncOpenAI(api_key=key, base_url=base_url, timeout=90, max_retries=0) as client:
             response = await asyncio.wait_for(
                 client.responses.create(
                     model=model,
                     instructions="你是模型连通性检查服务。请只回复：AI连接成功",
                     input="测试连接",
                     max_output_tokens=80,
-                ), timeout=30)
+                ), timeout=95)
         return {"ok": True, "model": model,
+                "elapsed_seconds": round(time.monotonic() - started, 2),
                 "reply": (response.output_text or "")[:500]}
+    except RateLimitError:
+        msg = "Azure OpenAI 返回 429：模型部署触发限流或当前区域容量不足。请稍后重试，检查 Azure 部署容量与配额。"
+        status = 429
+    except APIStatusError as exc:
+        status = 502
+        if exc.status_code in (401, 403):
+            msg = f"Azure OpenAI 返回 {exc.status_code}：请检查 API Key、账号权限及网络访问策略。"
+        elif exc.status_code == 404:
+            msg = "Azure OpenAI 返回 404：请核实 Base URL、模型部署名与 API 版本。"
+        elif exc.status_code >= 500:
+            msg = f"Azure OpenAI 返回 {exc.status_code}：上游服务暂时不可用。"
+        else:
+            msg = f"Azure OpenAI 返回 {exc.status_code}：请求参数或部署配置可能不兼容。"
+    except (APITimeoutError, asyncio.TimeoutError):
+        status, msg = 504, "调用超过 90 秒：Azure 模型响应超时，请检查部署容量或稍后重试。"
+    except APIConnectionError:
+        status, msg = 502, "无法连接 Azure OpenAI：请检查容器网络、DNS、TLS 与 API 地址。"
     except Exception as exc:
-        import logging
-        logging.getLogger(__name__).warning(
-            "AI_MODEL_TEST_FAILED error_type=%s", type(exc).__name__)
-        raise HTTPException(
-            status_code=502,
-            detail="AI 模型调用失败（" + type(exc).__name__ + "），请检查地址、部署名和密钥；详见服务器日志"
-        ) from None
+        status, msg = 502, "AI 模型测试失败（" + type(exc).__name__ + "），请查看服务器日志。"
+    elapsed = round(time.monotonic() - started, 2)
+    logging.getLogger(__name__).warning(
+        "AI_MODEL_TEST_FAILED status=%s elapsed=%.2f", status, elapsed)
+    raise HTTPException(status_code=status, detail=f"{msg} 耗时 {elapsed} 秒") from None
+
 
 @app.post("/api/v1/ask", dependencies=[Depends(require_admin)])
 async def ask_web(body: AskRequest):
