@@ -65,6 +65,8 @@ def execute(approval_id):
         return {"status":"already_processed"}
     try:
         if read_setting("write_enabled") != "true":
+            task["status"] = "disabled"
+            client.set(key,json.dumps(task),ex=86400)
             return {"status":"write_disabled"}
         result=asyncio.run(run_mcp_change(task))
         task["status"]="success"
