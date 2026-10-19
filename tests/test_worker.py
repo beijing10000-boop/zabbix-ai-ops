@@ -106,3 +106,14 @@ def test_alert_card_newlines_are_real():
     assert "\n" in body
     assert "\\n" not in body
     assert body.splitlines()[0] == "**主机名称：** C15-HX-M"
+
+def test_zabbix_alarm_and_recovery_event_times():
+    event={"event_id":"600001","severity":"2","event_value":"1",
+           "event_date":"2026.10.19","event_time":"19:53:20",
+           "recovery_date":"2026.10.19","recovery_time":"20:01:21"}
+    problem=str(worker.make_card(event))
+    assert "告警时间" in problem and "19:53:20" in problem
+    recovered=str(worker.make_card({**event,"event_value":"0"}))
+    assert "恢复时间" in recovered and "20:01:21" in recovered
+    unresolved=str(worker.make_card({**event,"event_date":"{EVENT.DATE}"}))
+    assert "告警时间" not in unresolved
