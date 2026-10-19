@@ -28,7 +28,19 @@ services:
     build: .
     command: ["python","-m","app.qa_worker"]
     restart: unless-stopped
-    environment: *app-env
+    environment:
+      <<: *app-env
+      AI_WRITE_ENABLED: ${AI_WRITE_ENABLED:-false}
+    volumes: [appdata:/app/data]
+    depends_on: [redis]
+  change-worker:
+    build: .
+    command: ["python","-m","app.change_worker"]
+    restart: unless-stopped
+    environment:
+      <<: *app-env
+      ZABBIX_WRITE_MCP_URL: ${ZABBIX_WRITE_MCP_URL:-}
+      ZABBIX_WRITE_MCP_TOKEN: ${ZABBIX_WRITE_MCP_TOKEN:-}
     volumes: [appdata:/app/data]
     depends_on: [redis]
   feishu-receiver:
