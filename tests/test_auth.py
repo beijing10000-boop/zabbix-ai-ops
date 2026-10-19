@@ -34,20 +34,21 @@ def test_csrf_and_session_cookie_security(monkeypatch):
     R.headers={"x-csrf-token":"csrf123"}
     assert feishu_auth.authenticate(R())["open_id"] == "ou_test"
 
-def test_http_callback_requires_explicit_allowlist(monkeypatch):
+def test_http_callback_is_default_and_url_is_validated(monkeypatch):
     from app.feishu_auth import _redirect_uri, _secure_cookie
     from fastapi import HTTPException
     import pytest
+    from app.main import connection
+    with connection() as db:
+        db.execute("DELETE FROM settings WHERE key IN ('web_protocol','web_public_host')")
     monkeypatch.setenv("FEISHU_LOGIN_REDIRECT_URI","http://172.20.200.93:8088/api/v1/auth/callback")
-    monkeypatch.delenv("FEISHU_ALLOW_HTTP_TEST",raising=False)
-    with pytest.raises(HTTPException): _redirect_uri()
-    monkeypatch.setenv("FEISHU_ALLOW_HTTP_TEST","true")
     assert _redirect_uri()=="http://172.20.200.93:8088/api/v1/auth/callback"
     assert _secure_cookie() is False
-    monkeypatch.setenv("FEISHU_LOGIN_REDIRECT_URI","http://evil.invalid/api/v1/auth/callback")
+    monkeypatch.setenv("FEISHU_LOGIN_REDIRECT_URI","http://example.invalid/evil")
     with pytest.raises(HTTPException): _redirect_uri()
     monkeypatch.setenv("FEISHU_LOGIN_REDIRECT_URI","https://aiops.example.com/api/v1/auth/callback")
     assert _secure_cookie() is True
+
 
 def test_default_http_and_ui_https_switch(monkeypatch):
     from app import feishu_auth
