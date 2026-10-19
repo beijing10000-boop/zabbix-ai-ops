@@ -7,7 +7,7 @@ import secrets
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from cryptography.fernet import Fernet, InvalidToken
@@ -50,11 +50,9 @@ def read_setting(key):
         return DEFAULTS.get(key, "")
     return cipher().decrypt(row[0].encode()).decode() if row[1] else row[0]
 
-def require_admin(authorization: str | None = Header(default=None)):
-    if not ADMIN_TOKEN:
-        raise HTTPException(status_code=503, detail="admin token not configured")
-    if not authorization or not hmac.compare_digest(authorization, "Bearer " + ADMIN_TOKEN):
-        raise HTTPException(status_code=401, detail="unauthorized")
+def require_admin(request: Request):
+    from .feishu_auth import authenticate
+    return authenticate(request)
 
 class SettingsUpdate(BaseModel):
     values: dict[str, str]
@@ -216,3 +214,6 @@ def ingest(alert: Alert, authorization: str | None = Header(default=None)):
         redis.delete(key)
         raise
     return {"status": "queued", "job_id": job.id}
+
+# Register OAuth endpoints after defining app and persistence helpers.
+from . import feishu_auth  # noqa: E402,F401
