@@ -8,7 +8,7 @@ from rq import Worker, Queue
 from .ai_agent import ask
 from .alert_context import resolve_replied_event
 from .change_approval import request_change, consume_decision
-from .feishu_client import send_card, update_card, send_text
+from .feishu_client import reply_card, send_card, update_card, send_text
 
 log = logging.getLogger(__name__)
 
@@ -19,13 +19,13 @@ async def execute(chat_id, question, message_id, sender_open_id=None, parent_id=
     if action is None:
         action = request_change(question, sender_open_id, chat_id)
     if action is not None:
-        await send_card(chat_id, "Zabbix 变更审批" if read_setting("write_enabled") == "true" else "Zabbix 变更审批（模拟）", action, "orange")
+        await reply_card(message_id, "Zabbix 变更审批" if read_setting("write_enabled") == "true" else "Zabbix 变更审批（模拟）", action, "orange")
         log.info("FEISHU_APPROVAL_HANDLED message_id=%s", message_id)
         return
 
     progress_id = None
     try:
-        progress_id = await send_card(chat_id, "AI 分析中",
+        progress_id = await reply_card(message_id, "AI 分析中",
              "**问题：** " + question[:180] + "\n\n⏳ 正在查询 Zabbix MCP 并进行分析……")
         log.info("FEISHU_PROGRESS_SENT message_id=%s", message_id)
     except Exception:
@@ -49,7 +49,7 @@ async def execute(chat_id, question, message_id, sender_open_id=None, parent_id=
                 return
             except Exception:
                 log.exception("FEISHU_CARD_UPDATE_FAILED message_id=%s", message_id)
-        await send_text(chat_id, result)
+        await reply_card(message_id, "AI 分析完成", result)
     except Exception:
         log.exception("FEISHU_QA_FAILED message_id=%s", message_id)
         if progress_id:
@@ -59,7 +59,7 @@ async def execute(chat_id, question, message_id, sender_open_id=None, parent_id=
                 return
             except Exception:
                 log.exception("FEISHU_ERROR_UPDATE_FAILED message_id=%s", message_id)
-        await send_text(chat_id, "AI 分析失败，请稍后再试。")
+        await reply_card(message_id, "AI 分析失败", "分析失败，请稍后重试或联系管理员。", "red")
 
 def process_question(chat_id, question, message_id, sender_open_id=None, parent_id=None):
     return asyncio.run(execute(chat_id, question, message_id, sender_open_id, parent_id))
