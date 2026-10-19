@@ -34,6 +34,27 @@ async def send_card(chat_id,title,text,template="blue"):
                   "content":json.dumps(make_card(title,text,template),ensure_ascii=False)})
         return result.get("data",{}).get("message_id")
 
+async def reply_card(message_id, title, text, template="blue"):
+    """Reply to the original Feishu message; return the reply message ID.
+
+    The reply stays associated with the user's message. Later progress updates
+    PATCH this reply rather than posting additional group messages.
+    """
+    if not message_id:
+        raise ValueError("original message ID is required for a reply")
+    async with httpx.AsyncClient(timeout=30) as client:
+        token = await get_token(client)
+        result = await request(client, "POST",
+            ROOT + "/im/v1/messages/" + message_id + "/reply", token,
+            json={"msg_type": "interactive",
+                  "content": json.dumps(make_card(title, text, template), ensure_ascii=False),
+                  "reply_in_thread": False})
+        reply_id = (result.get("data") or {}).get("message_id")
+        if not reply_id:
+            raise RuntimeError("飞书回复成功但未返回消息 ID")
+        return reply_id
+
+
 async def update_card(message_id,title,text,template="green"):
     async with httpx.AsyncClient(timeout=30) as client:
         token = await get_token(client)
