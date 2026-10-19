@@ -1,8 +1,3 @@
-import os
-from cryptography.fernet import Fernet
-os.environ["APP_ENCRYPTION_KEY"]=Fernet.generate_key().decode()
-os.environ["ADMIN_API_TOKEN"]="test-admin"
-os.environ["DATA_DIR"]="/tmp/zabbix-ai-ops-pytest"
 from fastapi.testclient import TestClient
 from app.main import app
 client=TestClient(app)
