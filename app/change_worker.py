@@ -21,8 +21,8 @@ ALLOWED = {"event_acknowledge"}
 async def run_mcp_change(task):
     if task.get("kind") != "event_acknowledge" or not str(task.get("event_id", "")).isdigit():
         raise ValueError("unsupported or invalid change request")
-    endpoint = os.environ.get("ZABBIX_WRITE_MCP_URL", "")
-    token = os.environ.get("ZABBIX_WRITE_MCP_TOKEN", "")
+    endpoint = read_setting("write_mcp_url")
+    token = read_setting("write_mcp_token")
     if not endpoint or not token:
         raise RuntimeError("write MCP service not configured")
     headers = {"Authorization": "Bearer " + token}
@@ -50,6 +50,8 @@ def execute(approval_id):
     task=json.loads(raw)
     if task.get("status") != "approved" or task.get("kind") not in ALLOWED:
         return {"status":"rejected"}
+    if read_setting("write_enabled") != "true":
+        return {"status":"write_disabled"}
     # Exactly-once attempt claim. MCP may apply a change even if the response
     # is lost: never automatically retry the write.
     script="""local x=redis.call('GET',KEYS[1])
@@ -62,6 +64,8 @@ def execute(approval_id):
     if client.eval(script,1,key) != 1:
         return {"status":"already_processed"}
     try:
+        if read_setting("write_enabled") != "true":
+            return {"status":"write_disabled"}
         result=asyncio.run(run_mcp_change(task))
         task["status"]="success"
         client.set(key,json.dumps(task),ex=86400)
