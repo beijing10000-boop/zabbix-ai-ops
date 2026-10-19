@@ -62,6 +62,13 @@ def make_card(event, info=None, *, analysis=False):
     groups = event.get("host_groups") or info.get("host_groups")
     if groups and str(groups).strip() not in ("待查询", "未查到", "未提供"):
         lines.append("**所属分组：** " + safe(groups, 140))
+    date = event.get("recovery_date") if recovery else event.get("event_date")
+    time = event.get("recovery_time") if recovery else event.get("event_time")
+    if not date or not time:
+        date = date or event.get("event_date")
+        time = time or event.get("event_time")
+    if date and time and "{" not in (str(date) + str(time)):
+        lines.append(("**恢复时间：** " if recovery else "**告警时间：** ") + safe(str(date) + " " + str(time), 55))
     lines += [
         "**事件：** " + safe(event.get("event_name"), 200),
         "**事件 ID：** " + safe(event.get("event_id"), 40),
