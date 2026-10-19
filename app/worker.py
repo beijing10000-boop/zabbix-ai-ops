@@ -67,7 +67,7 @@ def make_card(event, info):
                f'**事件：** {safe(event.get("event_name"),200)}\n'
                f'**事件 ID：** {safe(event.get("event_id"),40)}')
     return {"config":{"wide_screen_mode":True},
-      "header":{"title":{"tag":"plain_text","content":LEVELS.get(sev,"未知")+"｜"+("需要人工介入" if human else "暂不需要人工介入")},
+      "header":{"title":{"tag":"plain_text","content":LEVELS.get(sev,"未知")+"｜"+("需人工核验" if human else "AI分析完成")},
                 "template":COLORS.get(sev,"grey")},
       "elements":[{"tag":"div","text":{"tag":"lark_md","content":content}},
                   {"tag":"hr"},
