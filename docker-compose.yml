@@ -15,6 +15,9 @@ services:
     environment:
       <<: *app-env
       ADMIN_API_TOKEN: ${ADMIN_API_TOKEN:?set admin token}
+      ALLOW_LEGACY_ADMIN_TOKEN: ${ALLOW_LEGACY_ADMIN_TOKEN:-false}
+      FEISHU_ADMIN_OPEN_IDS: ${FEISHU_ADMIN_OPEN_IDS:-}
+      FEISHU_LOGIN_REDIRECT_URI: ${FEISHU_LOGIN_REDIRECT_URI:-}
     volumes: [appdata:/app/data]
     depends_on: [redis]
   alert-worker:

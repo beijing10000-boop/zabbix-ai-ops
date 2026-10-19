@@ -48,3 +48,20 @@ docker compose logs -f alert-worker
 - 飞书自定义 Webhook 的签名支持待补；启用签名校验的 Webhook 可能无法发送。
 - 原告警引用回复、写入审批等尚未接入。
 - MCP 和飞书权限需在真实设备上测试。不要把本开发版直接用于生产替换。
+
+## 飞书账号登录（新版 Web 控制台）
+
+后台使用企业自建飞书应用网页授权，登录用户 Open ID 必须处于服务器环境变量 `FEISHU_ADMIN_OPEN_IDS` 白名单中。服务器端保存随机会话，浏览器只保存 HttpOnly、Secure、SameSite=Lax Cookie；写入接口要求 CSRF Token。**要求 HTTPS，不能直接通过 `http://172.20.200.93:8088` 完成 OAuth 登录。**
+
+1. 在飞书开放平台的当前自建应用中开通网页授权，进入“安全设置 → 重定向 URL”，填写与服务器完全一致的 `https://你的域名/api/v1/auth/callback`，并发布应用配置。
+2. 将该域名使用 HTTPS 反向代理到 `127.0.0.1:8088`；建议仅管理网络能访问。
+3. 在服务器 `.env` 中增加：
+   ```ini
+   FEISHU_LOGIN_REDIRECT_URI=https://你的域名/api/v1/auth/callback
+   FEISHU_ADMIN_OPEN_IDS=ou_你的飞书管理员OpenID
+   ALLOW_LEGACY_ADMIN_TOKEN=false
+   ```
+4. `docker compose up -d --build web`，访问 HTTPS 地址，点击“使用飞书账号登录”。复用之前 Web 已保存的 `lark_app_id`、`lark_app_secret`，无需再次写到浏览器。
+5. 验证 `/api/v1/auth/me`、配置、AI 测试与日志可用，退出后不能再访问受保护接口。
+
+**从旧 Web 迁移：** 旧版管理员 Token 不再是页面登录方式。仅在故障迁移时可临时设置 `ALLOW_LEGACY_ADMIN_TOKEN=true` 启用旧 API Token；结束后必须关闭。不要删除 `APP_ENCRYPTION_KEY` 或原 SQLite 数据卷。飞书应用的 OAuth 登录和飞书机器人 WebSocket 接收是独立功能，不要求立即把 92 的长连接切换到 93。
