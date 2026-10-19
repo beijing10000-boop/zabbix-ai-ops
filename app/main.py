@@ -21,8 +21,8 @@ ADMIN_TOKEN = os.getenv("ADMIN_API_TOKEN", "")
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 app = FastAPI(title="Zabbix AI Ops", version="0.1.0")
 SENSITIVE = {"openai_api_key", "mcp_token", "lark_app_secret", "zabbix_webhook_secret", "write_mcp_token"}
-ALLOWED = SENSITIVE | {"openai_base_url", "openai_model", "mcp_url", "lark_app_id", "allowed_chat_ids", "min_severity", "ai_prompt", "ai_alert_prompt", "ai_qa_prompt", "feishu_enabled", "ai_approver_open_ids", "web_protocol", "web_public_host", "write_mcp_url", "write_enabled", "feishu_alert_chat_ids"}
-DEFAULTS = {"min_severity": "3", "feishu_enabled": "false", "web_protocol": "http", "write_enabled": "false"}
+ALLOWED = SENSITIVE | {"openai_base_url", "openai_model", "mcp_url", "lark_app_id", "allowed_chat_ids", "min_severity", "ai_min_severity", "ai_prompt", "ai_alert_prompt", "ai_qa_prompt", "feishu_enabled", "ai_approver_open_ids", "web_protocol", "web_public_host", "write_mcp_url", "write_enabled", "feishu_alert_chat_ids"}
+DEFAULTS = {"min_severity": "3", "ai_min_severity": "4", "feishu_enabled": "false", "web_protocol": "http", "write_enabled": "false"}
 
 def cipher():
     if not MASTER_KEY:
@@ -279,17 +279,17 @@ def ingest(alert: Alert, authorization: str | None = Header(default=None)):
     secret = read_setting("zabbix_webhook_secret")
     if not secret or not authorization or not hmac.compare_digest(authorization, "Bearer " + secret):
         raise HTTPException(status_code=401, detail="unauthorized")
-    if alert.event_source != "0" or alert.event_value != "1":
-        return {"status": "skipped", "reason": "not problem trigger"}
+    # Receive both PROBLEM and recovery events of all severities.
+    if alert.event_source != "0" or alert.event_value not in ("0", "1"):
+        return {"status": "skipped", "reason": "unsupported event type"}
     try:
         severity = int(alert.severity)
-        threshold = int(read_setting("min_severity") or "3")
+        if not 0 <= severity <= 5:
+            raise ValueError("invalid severity")
     except ValueError:
-        raise HTTPException(status_code=422, detail="invalid severity setting")
-    if severity < threshold:
-        return {"status": "skipped", "reason": "below threshold"}
+        raise HTTPException(status_code=422, detail="invalid severity")
     redis = Redis.from_url(REDIS_URL)
-    key = "zabbix-ai:processed:" + alert.event_id
+    key = "zabbix-ai:processed:" + alert.event_id + ":" + alert.event_value
     if not redis.set(key, "queued", nx=True, ex=86400):
         return {"status": "duplicate"}
     try:
