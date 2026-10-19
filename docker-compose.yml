@@ -18,6 +18,8 @@ services:
       ALLOW_LEGACY_ADMIN_TOKEN: ${ALLOW_LEGACY_ADMIN_TOKEN:-false}
       FEISHU_ADMIN_OPEN_IDS: ${FEISHU_ADMIN_OPEN_IDS:-}
       FEISHU_LOGIN_REDIRECT_URI: ${FEISHU_LOGIN_REDIRECT_URI:-}
+      WEB_PROTOCOL: ${WEB_PROTOCOL:-http}
+      WEB_PUBLIC_HOST: ${WEB_PUBLIC_HOST:-}
       FEISHU_ALLOW_HTTP_TEST: ${FEISHU_ALLOW_HTTP_TEST:-false}
     volumes: [appdata:/app/data]
     depends_on: [redis]

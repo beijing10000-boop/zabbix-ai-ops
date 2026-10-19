@@ -76,3 +76,16 @@ FEISHU_ADMIN_OPEN_IDS=ou_实际管理员OpenID
 ALLOW_LEGACY_ADMIN_TOKEN=false
 ```
 这仅用于当前测试服务器；默认仍要求 HTTPS。HTTP 下 OAuth 授权码、会话 Cookie 和 API 响应都没有传输加密，网络中间人可能窃取会话并修改配置，**绝不能作为正式生产部署**。验证后应改成可信 HTTPS 并关闭 `FEISHU_ALLOW_HTTP_TEST`。
+
+
+### HTTP 默认，Web 管理页可切换 HTTPS
+现在系统默认使用 HTTP，不必设置 `FEISHU_ALLOW_HTTP_TEST`。首次启动在 `.env` 写入：
+```ini
+FEISHU_LOGIN_REDIRECT_URI=http://172.20.200.93:8088/api/v1/auth/callback
+WEB_PROTOCOL=http
+WEB_PUBLIC_HOST=172.20.200.93:8088
+FEISHU_ADMIN_OPEN_IDS=ou_你的管理员OpenID
+```
+随后在【系统配置】页面可修改【Web 访问协议】为 `https`、【Web 外部访问主机】为域名或 IP（可带端口），保存后同步修改飞书平台中的重定向 URL，再重新登录。**HTTPS 必须自行配置受信任证书和反向代理**；UI 选中 https 不会自动签发证书或使端口开始提供 TLS。为避免切换期间锁定后台，推荐先将 HTTPS 代理配置完成再修改 Web 设置。
+
+**安全告警**：HTTP 下 OAuth 授权码、会话 Cookie、配置与 AI/MCP 凭据在网络中没有加密。仅可在受控隔离测试环境使用，正式环境强烈建议 HTTPS。Web 只允许环境变量指定的管理员 Open ID 登录。

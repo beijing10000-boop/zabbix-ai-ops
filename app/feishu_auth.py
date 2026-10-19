@@ -28,18 +28,30 @@ def _hash(value):
     return hashlib.sha256(value.encode()).hexdigest()
 
 def _redirect_uri():
-    uri = os.getenv("FEISHU_LOGIN_REDIRECT_URI", "").strip()
+    """Resolve externally configured origin; default scheme HTTP, opt-in HTTPS."""
+    scheme = (read_setting("web_protocol") or os.getenv("WEB_PROTOCOL", "http")).lower()
+    if scheme not in ("http", "https"):
+        raise HTTPException(503, "访问协议必须为 http 或 https")
+    host = (read_setting("web_public_host") or os.getenv("WEB_PUBLIC_HOST", "")).strip()
+    old_uri = os.getenv("FEISHU_LOGIN_REDIRECT_URI", "").strip()
+    if host:
+        # Host is administered via authenticated settings; block path, userinfo,
+        # fragments and off-origin redirect tricks.
+        parts = urlsplit(scheme + "://" + host)
+        if not parts.hostname or parts.username or parts.password or parts.path not in ("", "/") or parts.query or parts.fragment:
+            raise HTTPException(503, "Web 外部地址格式无效（只允许主机名/IP和可选端口）")
+        uri = scheme + "://" + parts.netloc + "/api/v1/auth/callback"
+    elif old_uri:
+        uri = old_uri
+    else:
+        raise HTTPException(503, "请先在 .env 设置 FEISHU_LOGIN_REDIRECT_URI，或在 Web 后台配置外部访问主机")
     parts = urlsplit(uri)
-    if (parts.path != "/api/v1/auth/callback" or parts.query or parts.fragment
+    if (parts.scheme not in ("http", "https") or not parts.hostname
+            or parts.path != "/api/v1/auth/callback" or parts.query or parts.fragment
             or parts.username or parts.password):
-        raise HTTPException(503, "飞书回调地址格式无效")
-    if parts.scheme == "https" and parts.hostname:
-        return uri
-    if (parts.scheme == "http" and parts.hostname == "172.20.200.93"
-            and parts.port == 8088
-            and os.getenv("FEISHU_ALLOW_HTTP_TEST", "false").lower() == "true"):
-        return uri
-    raise HTTPException(503, "请配置 HTTPS 回调；仅 172.20.200.93 测试环境可显式开启 HTTP")
+        raise HTTPException(503, "飞书重定向 URL 配置不正确")
+    return uri
+
 
 def _secure_cookie():
     return urlsplit(_redirect_uri()).scheme == "https"
