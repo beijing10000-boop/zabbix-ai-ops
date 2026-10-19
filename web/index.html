@@ -5,6 +5,9 @@
 <input id="token" type="password" placeholder="ADMIN_API_TOKEN"><button onclick="load()">连接后台</button><span id="status"></span></div>
 <div class="panel"><h3>Web 配置</h3><div id="fields" class="grid"></div><button onclick="save()">保存修改</button><span id="saved"></span>
 <p class="hint">机密信息只显示 ********；留空将清空该项。不要在公共网络直接开放此管理页面；通过 HTTPS 反向代理访问。</p></div>
+<div class="panel"><h3>运行诊断</h3><p class="hint">可以检查 Redis/任务队列状态，并执行一次只读 MCP 工具发现，不会修改 Zabbix。</p>
+<button onclick="checkStatus()">检查服务</button><button onclick="checkMcp()">测试 MCP 连接</button>
+<pre id="diagnostic" style="white-space:pre-wrap"></pre></div>
 <div class="panel"><h3>操作审计</h3><pre id="audit" style="white-space:pre-wrap;max-height:220px;overflow:auto"></pre></div></main>
 <script>
 const names={openai_base_url:'AI API Base URL',openai_model:'AI 模型',openai_api_key:'AI API Key',mcp_url:'Zabbix MCP URL',mcp_token:'MCP Token',lark_app_id:'飞书 App ID',lark_app_secret:'飞书 App Secret',allowed_chat_ids:'允许问答的群 ID',feishu_webhook_url:'告警飞书 Webhook URL',feishu_sign_secret:'飞书 Webhook 签名密钥',feishu_enabled:'告警飞书发送开关 true/false',zabbix_webhook_secret:'Zabbix Webhook 密钥',min_severity:'最低告警级别 0–5',ai_prompt:'AI 提示词'};
@@ -13,5 +16,7 @@ let loaded={};const head=()=>({'Authorization':'Bearer '+document.getElementById
 async function request(path,opts={}){const r=await fetch(path,{...opts,headers:head()});const j=await r.json();if(!r.ok)throw Error(j.detail||r.status);return j}
 async function load(){try{loaded=await request('/api/v1/settings');document.getElementById('fields').replaceChildren(...Object.entries(names).map(([key,label])=>{let d=document.createElement('div'),l=document.createElement('label'),i=document.createElement(key==='ai_prompt'?'textarea':'input');l.textContent=label;i.id='field-'+key;i.value=loaded[key]||'';if(sensitive.has(key))i.type='password';d.append(l,i);return d;}));document.getElementById('status').textContent=' 已连接';await audit()}catch(e){document.getElementById('status').textContent=' 连接失败: '+e.message}}
 async function save(){try{const values={};for(const key of Object.keys(names)){let v=document.getElementById('field-'+key).value;if(v!==loaded[key])values[key]=v}await request('/api/v1/settings',{method:'PUT',body:JSON.stringify({values})});document.getElementById('saved').textContent=' 保存成功';await load()}catch(e){document.getElementById('saved').textContent=' 保存失败: '+e.message}}
+async function checkStatus(){try{document.getElementById('diagnostic').textContent=JSON.stringify(await request('/api/v1/status'),null,2)}catch(e){document.getElementById('diagnostic').textContent=e.message}}
+async function checkMcp(){try{document.getElementById('diagnostic').textContent=JSON.stringify(await request('/api/v1/test/mcp',{method:'POST'}),null,2)}catch(e){document.getElementById('diagnostic').textContent=e.message}}
 async function audit(){const rows=await request('/api/v1/audit');document.getElementById('audit').textContent=rows.map(x=>x.time+'  '+x.action+'  '+x.key).join('\n')}
 </script></body></html>
