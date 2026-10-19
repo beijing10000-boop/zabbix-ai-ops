@@ -1,32 +1,49 @@
 # Zabbix AI Ops
 
-面向 Zabbix 7.4+ 的 AI 告警分析与飞书群内问答项目（**开发中，尚未发布生产版**）。
+**Zabbix + AI + Feishu** 运维集成平台，当前为 **v0.1 开发预览版**，仓库为 Private。请勿覆盖现有生产部署。
 
-## 目标功能
+## 项目定位
 
-- Zabbix Webhook → Redis/RQ → AI → Zabbix MCP → 飞书交互卡片。
-- 飞书群 @AI 主动查询监控数据，先发送“分析中”卡片，再更新同一张卡片。
-- Web 后台管理模型、MCP、飞书、告警策略和提示词（**待实现**）。
-- 私有仓库、版本发布、升级和回滚（**待完善**）。
+- Zabbix 告警：Webhook → Redis/RQ → Zabbix MCP 只读查询 → AI 分析 → 飞书告警卡片。
+- Web 管理：FastAPI + 静态单页管理界面，支持模型、MCP、Webhook、飞书等配置。
+- 安全：初始化管理员 API Token，SQLite 配置存储，Fernet 加密密钥，MCP 工具只读白名单。
+- 研发中：飞书群主动问答迁移、告警消息引用分析、二次审批写操作、多用户权限、升级回滚。
 
-## 当前代码状态
+> **重要：** 此代码根据此前的项目讨论和已生成补丁重新整合，不是从现有生产服务器导出的最终镜像。仍需在隔离环境完成兼容性和安全验证。
 
-当前仓库是根据此前讨论的代码、已保存的飞书问答进度卡补丁，重新建立的开发基线；**不是从生产服务器 172.20.200.92 导出的完整运行镜像**。已有的 `feishu_qa_card.py` 是对旧版 `worker.process_question` 的适配器，尚需集成测试，不能单独部署运行。
+## 快速预览
 
-禁止直接把此仓库替换到现有生产目录。详情见 [开发状态](docs/STATUS.md)。
+阅读 [安装文档](docs/INSTALLATION.md)，准备 `APP_ENCRYPTION_KEY`、`ADMIN_API_TOKEN` 后：
 
-## 目录
+```sh
+docker compose up -d --build
+curl http://127.0.0.1:8088/healthz
+```
 
-- `backend/feishu_qa_card.py` — 飞书“分析中 → 分析完成”卡片适配器（历史补丁代码）。
-- `docs/INSTALLATION.md` — 安装规划及现有部署检查。
-- `docs/CONFIGURATION.md` — 配置项和安全原则。
-- `docs/TROUBLESHOOTING.md` — 已验证故障案例。
-- `docs/ROADMAP.md` — Web 管理后台与升级规划。
+默认只监听宿主机 loopback；访问 Web 管理界面请通过 SSH 隧道或可信 HTTPS 反向代理。不要直接将 HTTP 管理端口暴露公网。
 
-## 安全
+## 主要模块
 
-勿提交 `.env`、API Token、飞书 App Secret、Webhook URL、运行日志、数据库或生产 IP/主机清单。Git 历史中的泄露密钥必须轮换。写入 Zabbix 配置功能默认禁用，未来必须在后端验证审批身份。
+| 组件 | 位置 | 当前状态 |
+|---|---|---|
+| Web 管理接口 | `app/main.py` | 开发版 |
+| Web 界面 | `web/index.html` | 开发版 |
+| AI 告警 Worker | `app/worker.py` | 开发版 |
+| Zabbix MCP 只读查询 | `app/mcp_client.py` | 开发版，待联调 |
+| 历史飞书问答卡片适配器 | `backend/feishu_qa_card.py` | 未集成 |
+| Docker Compose | `docker-compose.yml` | 开发版 |
+| pytest/CI | `tests/`, `.github/workflows/` | 基础测试 |
 
-## License
+## 文档
 
-尚未选择开源许可证；本仓库当前为 Private。
+- [部署与运行](docs/INSTALLATION.md)
+- [配置说明](docs/CONFIGURATION.md)
+- [常见问题](docs/TROUBLESHOOTING.md)
+- [开发状态](docs/STATUS.md)
+- [后续路线图](docs/ROADMAP.md)
+
+## 安全声明
+
+**不要上传生产密钥和配置。** 勿提交 `.env`、Token、数据库、Webhooks 或运行日志；禁止开放 MCP 写入到普通聊天会话。尚未实现完整的 RBAC 和审批执行器。
+
+当前仓库暂未选定开源 License，仅供获授权的私有仓库成员使用。
