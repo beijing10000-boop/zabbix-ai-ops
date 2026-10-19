@@ -1,9 +1,5 @@
 """Read-only AI diagnostics worker. Never executes Zabbix mutations."""
 import asyncio
-import base64
-import hashlib
-import hmac
-import time
 import json
 import logging
 import os
@@ -20,10 +16,6 @@ BASE_PROMPT = ("你是资深 Zabbix 运维分析师。只允许只读查询。�
                "故障原因100字内，建议150字内，分析500字内。无证据时不要猜测。")
 COLORS = {"0":"grey","1":"blue","2":"yellow","3":"orange","4":"red","5":"carmine"}
 LEVELS = {"0":"未分类","1":"信息","2":"警告","3":"一般严重","4":"严重","5":"灾难"}
-
-def feishu_sign(timestamp: str, secret: str) -> str:
-    key = (timestamp + "\n" + secret).encode("utf-8")
-    return base64.b64encode(hmac.new(key, digestmod=hashlib.sha256).digest()).decode()
 
 def alert_instructions(custom: str) -> str:
     return BASE_PROMPT + ("\n补充要求：" + custom if custom else "")
@@ -75,66 +67,32 @@ def make_card(event, info):
                     for title,key,maximum in [("故障原因","cause",100),("处理建议","action",150),("AI 分析","analysis",500)]]]}
     
 async def notify(card):
+    """Send alert cards solely through the configured Feishu enterprise app."""
     if cfg("feishu_enabled").lower() != "true":
-        log.warning("Feishu alert sending disabled")
+        log.warning("FEISHU_APP_ALERT_DISABLED")
         return
-    mode = cfg("feishu_alert_mode") or "app"
-    if mode == "app":
-        from .feishu_client import get_token, request, ROOT
-        ids = cfg("feishu_alert_chat_ids") or cfg("allowed_chat_ids")
-        chats = list(dict.fromkeys(x.strip() for x in ids.split(",") if x.strip()))
-        if not chats:
-            raise RuntimeError("飞书企业应用告警群未配置：feishu_alert_chat_ids")
-        errors = []
-        async with httpx.AsyncClient(timeout=30) as client:
-            token = await get_token(client)
-            for chat_id in chats:
-                try:
-                    await request(client, "POST", ROOT + "/im/v1/messages", token,
-                        params={"receive_id_type":"chat_id"},
-                        json={"receive_id":chat_id, "msg_type":"interactive",
-                              "content":json.dumps(card,ensure_ascii=False)})
-                except Exception as exc:
-                    log.error("FEISHU_APP_ALERT_FAILED chat_id=%s error=%s",
-                              chat_id[:5],type(exc).__name__)
-                    errors.append(chat_id[:5])
-        if errors:
-            raise RuntimeError("飞书企业应用部分群发送失败，数量：" + str(len(errors)))
-        return
-    if mode != "webhook":
-        raise RuntimeError("不支持的飞书告警发送方式")
-    webhook = cfg("feishu_webhook_url")
-    if not webhook:
-        raise RuntimeError("飞书 Webhook 未配置")
+    from .feishu_client import get_token, request, ROOT
+    ids = cfg("feishu_alert_chat_ids") or cfg("allowed_chat_ids")
+    chats = list(dict.fromkeys(x.strip() for x in ids.split(",") if x.strip()))
+    if not chats:
+        raise RuntimeError("未配置飞书企业应用告警群 Chat ID")
+    errors = []
     async with httpx.AsyncClient(timeout=30) as client:
-        payload = {"msg_type":"interactive","card":card}
-        sign_secret = cfg("feishu_sign_secret")
-        if sign_secret:
-            timestamp = str(int(time.time()))
-            payload.update({"timestamp":timestamp, "sign":feishu_sign(timestamp, sign_secret)})
-        for attempt in range(3):
+        token = await get_token(client)
+        for chat_id in chats:
             try:
-                response = await client.post(webhook, json=payload)
-                response.raise_for_status()
-            except (httpx.TransportError, httpx.HTTPStatusError) as exc:
-                retryable = isinstance(exc, httpx.TransportError) or (
-                    isinstance(exc, httpx.HTTPStatusError)
-                    and exc.response.status_code >= 500
-                )
-                if not retryable or attempt == 2:
-                    raise
-                await asyncio.sleep((1, 3)[attempt])
-                continue
-            try:
-                data = response.json()
-            except ValueError as exc:
-                snippet = response.text[:200]
-                # Never log secret-bearing payloads or HTML returned by unknown proxies.
-                log.error("FEISHU_INVALID_JSON status=%s body_length=%s", response.status_code, len(snippet))
-                raise RuntimeError("飞书返回非 JSON 响应（前 200 字符已省略以保护敏感信息）") from exc
-            if data.get("code", data.get("StatusCode", 0)) != 0:
-                raise RuntimeError("Feishu rejected card: code=" + str(data.get("code", data.get("StatusCode"))))
-            return
+                await request(client, "POST", ROOT + "/im/v1/messages", token,
+                    params={"receive_id_type": "chat_id"},
+                    json={"receive_id": chat_id, "msg_type": "interactive",
+                          "content": json.dumps(card, ensure_ascii=False)})
+                log.info("FEISHU_APP_ALERT_SENT chat_id_prefix=%s", chat_id[:5])
+            except Exception as exc:
+                log.error("FEISHU_APP_ALERT_FAILED chat_id_prefix=%s error=%s",
+                          chat_id[:5], type(exc).__name__)
+                errors.append(chat_id[:5])
+    if errors:
+        raise RuntimeError("企业应用告警有群发送失败，数量：" + str(len(errors)))
+
 
 async def handle_alert(event):
     ai_failed = False
