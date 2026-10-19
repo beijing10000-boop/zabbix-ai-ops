@@ -5,6 +5,8 @@ import json
 import os
 import secrets
 import sqlite3
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from contextlib import contextmanager
 from pathlib import Path
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
@@ -50,6 +52,19 @@ def read_setting(key):
     if not row:
         return DEFAULTS.get(key, "")
     return cipher().decrypt(row[0].encode()).decode() if row[1] else row[0]
+
+def beijing_time(value):
+    """Convert SQLite UTC CURRENT_TIMESTAMP fields for API presentation."""
+    if not value:
+        return value
+    try:
+        moment = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        if moment.tzinfo is None:
+            moment = moment.replace(tzinfo=timezone.utc)
+        return moment.astimezone(ZoneInfo("Asia/Shanghai")).strftime("%Y-%m-%d %H:%M:%S")
+    except (ValueError, TypeError):
+        return value
+
 
 def require_admin(request: Request):
     from .feishu_auth import authenticate
@@ -162,14 +177,14 @@ def alert_events(kind: str = "problems", limit: int = 100, offset: int = 0):
     clause = "event_value='1'" if kind == "problems" else "event_value='0'" if kind == "recoveries" else "ai_status IN ('pending','running','success','failed')"
     with connection() as db:
         rows = db.execute(f"""SELECT event_id,event_value,event_name,host_name,severity,received_at,notify_status,ai_status FROM alert_events WHERE {clause} ORDER BY id DESC LIMIT ? OFFSET ?""",(limit,offset)).fetchall()
-    return [{"event_id":r[0],"event_value":r[1],"event_name":r[2],"host_name":r[3],"severity":r[4],"received_at":r[5],"notify_status":r[6],"ai_status":r[7]} for r in rows]
+    return [{"event_id":r[0],"event_value":r[1],"event_name":r[2],"host_name":r[3],"severity":r[4],"received_at":beijing_time(r[5]),"notify_status":r[6],"ai_status":r[7]} for r in rows]
 
 
 @app.get("/api/v1/audit", dependencies=[Depends(require_admin)])
 def audit():
     with connection() as db:
         rows = db.execute("SELECT id,action,key,created_at FROM audit ORDER BY id DESC LIMIT 100").fetchall()
-    return [{"id": r[0], "action": r[1], "key": r[2], "time": r[3]} for r in rows]
+    return [{"id": r[0], "action": r[1], "key": r[2], "time": beijing_time(r[3])} for r in rows]
 
 @app.get("/api/v1/logs", dependencies=[Depends(require_admin)])
 def logs_overview():
@@ -189,7 +204,7 @@ def logs_overview():
         result["error"]="队列日志暂不可用，请查看 Redis 状态"
     with connection() as db:
         rows=db.execute("SELECT id,action,key,created_at FROM audit ORDER BY id DESC LIMIT 100").fetchall()
-    result["audit"]=[{"id":r[0],"action":r[1],"key":r[2],"time":r[3]} for r in rows]
+    result["audit"]=[{"id":r[0],"action":r[1],"key":r[2],"time":beijing_time(r[3])} for r in rows]
     return result
 
 @app.get("/api/v1/status", dependencies=[Depends(require_admin)])
