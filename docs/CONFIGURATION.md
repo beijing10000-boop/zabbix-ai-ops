@@ -7,3 +7,11 @@ Web 后台将管理：Zabbix Webhook 入口、MCP 服务及只读工具权限、
 系统密钥：通过首次初始化引导保存，后续只显示掩码。不得提供从 Web API 读取明文密钥的接口。MCP 写入功能独立凭证、默认关闭且必须审批。
 
 `.env.example` 是开发配置示例，**不代表 Web 后台已经完成**。
+
+## AI 提示词（P0 修复）
+
+- `ai_alert_prompt`：只用于 Zabbix 自动告警分析，可由 Web 修改；系统仍强制要求 JSON 字段 `host_groups,cause,action,analysis,human_required`。
+- `ai_qa_prompt`：只用于飞书主动问答，可由 Web 修改；系统只读工具白名单不可覆盖。
+- `ai_prompt`：旧配置，仅在 `ai_qa_prompt` 为空时提供兼容回退，不再用于告警分析。
+
+当前默认情况下 AI 分析失败会生成“AI 分析失败，请人工处理”兜底卡片。飞书通知失败仍会让 RQ 任务失败，持久化重试和通知追踪属于后续可靠性改造工作。
