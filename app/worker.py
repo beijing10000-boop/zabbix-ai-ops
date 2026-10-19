@@ -67,7 +67,7 @@ def make_card(event, info=None, *, analysis=False):
         "**事件 ID：** " + safe(event.get("event_id"), 40),
         "**事件来源：** 172.20.200.93 转发",
     ]
-    elements = [{"tag": "div", "text": {"tag": "lark_md", "content": "\\n".join(lines)}}]
+    elements = [{"tag": "div", "text": {"tag": "lark_md", "content": "\n".join(lines)}}]
     if analysis and not recovery and sev in ("4", "5"):
         elements.append({"tag": "hr"})
         for title, key, size in [("故障原因", "cause", 100),
