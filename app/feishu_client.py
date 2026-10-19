@@ -1,0 +1,49 @@
+"""Feishu tenant app message and interactive card operations."""
+import json
+import logging
+import httpx
+from .main import read_setting
+log = logging.getLogger(__name__)
+ROOT = "https://open.feishu.cn/open-apis"
+
+def make_card(title, text, template="blue"):
+    return {"config":{"wide_screen_mode":True,"update_multi":True},
+            "header":{"title":{"tag":"plain_text","content":title},"template":template},
+            "elements":[{"tag":"div","text":{"tag":"lark_md","content":str(text)[:11000]}}]}
+
+async def request(client, method, url, token=None, **kwargs):
+    headers = {"Authorization": "Bearer "+token} if token else {}
+    response = await client.request(method,url,headers=headers,**kwargs)
+    response.raise_for_status()
+    data = response.json()
+    if data.get("code",0) != 0:
+        raise RuntimeError("Feishu API error code=%s message=%s" % (data.get("code"),str(data.get("msg",""))[:120]))
+    return data
+
+async def get_token(client):
+    data = await request(client,"POST",ROOT+"/auth/v3/tenant_access_token/internal",
+                         json={"app_id":read_setting("lark_app_id"),"app_secret":read_setting("lark_app_secret")})
+    return data["tenant_access_token"]
+
+async def send_card(chat_id,title,text,template="blue"):
+    async with httpx.AsyncClient(timeout=30) as client:
+        token = await get_token(client)
+        result = await request(client,"POST",ROOT+"/im/v1/messages",token,
+            params={"receive_id_type":"chat_id"},
+            json={"receive_id":chat_id,"msg_type":"interactive",
+                  "content":json.dumps(make_card(title,text,template),ensure_ascii=False)})
+        return result.get("data",{}).get("message_id")
+
+async def update_card(message_id,title,text,template="green"):
+    async with httpx.AsyncClient(timeout=30) as client:
+        token = await get_token(client)
+        return await request(client,"PATCH",ROOT+"/im/v1/messages/"+message_id,token,
+            json={"content":json.dumps(make_card(title,text,template),ensure_ascii=False)})
+
+async def send_text(chat_id,text):
+    async with httpx.AsyncClient(timeout=30) as client:
+        token = await get_token(client)
+        return await request(client,"POST",ROOT+"/im/v1/messages",token,
+            params={"receive_id_type":"chat_id"},
+            json={"receive_id":chat_id,"msg_type":"text",
+                  "content":json.dumps({"text":text},ensure_ascii=False)})
