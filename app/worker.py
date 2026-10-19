@@ -1,5 +1,9 @@
 """Read-only AI diagnostics worker. Never executes Zabbix mutations."""
 import asyncio
+import base64
+import hashlib
+import hmac
+import time
 import json
 import logging
 import os
@@ -69,7 +73,15 @@ async def notify(card):
         log.warning("Feishu sending disabled; diagnostics completed without notification")
         return
     async with httpx.AsyncClient(timeout=30) as client:
-        response = await client.post(webhook, json={"msg_type":"interactive","card":card})
+        payload = {"msg_type":"interactive","card":card}
+        sign_secret = cfg("feishu_sign_secret")
+        if sign_secret:
+            timestamp = str(int(time.time()))
+            digest = hmac.new((timestamp + "\\n" + sign_secret).encode(),
+                              digestmod=hashlib.sha256).digest()
+            payload.update({"timestamp":timestamp,
+                            "sign":base64.b64encode(digest).decode()})
+        response = await client.post(webhook, json=payload)
         response.raise_for_status()
         data = response.json()
         if data.get("code", data.get("StatusCode", 0)) != 0:
