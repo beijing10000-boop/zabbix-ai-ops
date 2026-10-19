@@ -105,6 +105,18 @@ def initial_info(event):
     }
 
 
+def update_event(event, **states):
+    from .main import connection
+    allowed = {"notify_status", "ai_status"}
+    changes = {key:value for key,value in states.items() if key in allowed}
+    if not changes:
+        return
+    with connection() as db:
+        db.execute("UPDATE alert_events SET " + ", ".join(key + "=?" for key in changes)
+                   + " WHERE event_id=? AND event_value=?",
+                   (*changes.values(), str(event["event_id"]), str(event.get("event_value","1"))))
+
+
 async def handle_alert(event):
     # Delivery and AI diagnostics are separate: do not wait for the model
     # before sending the initial alert.
@@ -113,22 +125,28 @@ async def handle_alert(event):
     info = initial_info(event)
     try:
         await notify(make_card(event, info))
+        update_event(event, notify_status="sent" if cfg("feishu_enabled").lower()=="true" else "disabled")
     except Exception:
+        update_event(event, notify_status="failed")
         log.exception("INITIAL_ALERT_DELIVERY_FAILED event_id=%s", event.get("event_id"))
         raise
     threshold = int(cfg("ai_min_severity") or "4")
     if recovery or severity < threshold:
         return {"event_id":event["event_id"], "notified":True, "diagnosed":False, "ai_skipped":True}
+    update_event(event, ai_status="running")
     try:
         analysis = await analyze(event)
     except Exception as exc:
+        update_event(event, ai_status="failed")
         log.warning("ALERT_ANALYZE_FAILED event_id=%s error=%s", event.get("event_id"), type(exc).__name__)
         # Initial notification already arrived. Avoid flooding the same group
         # with another card when the model is unavailable.
         return {"event_id":event["event_id"],"notified":True,"diagnosed":False,"ai_failed":True}
     try:
         await notify(make_card(event,analysis))
+        update_event(event, ai_status="success")
     except Exception:
+        update_event(event, ai_status="failed")
         log.exception("AI_ANALYSIS_DELIVERY_FAILED event_id=%s",event.get("event_id"))
         raise
     return {"event_id":event["event_id"],"notified":True,"diagnosed":True}
