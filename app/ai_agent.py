@@ -48,7 +48,7 @@ async def ask(question, extra_context=""):
         custom = read_setting("ai_qa_prompt") or read_setting("ai_prompt")
         prompt = SYSTEM + ("\n补充要求：" + custom if custom else "")
         history = [{"role":"user","content": question[:3000] +
-                    ("\n参考上下文：" + extra_context[:1500] if extra_context else "")}]
+                    ("\n参考上下文：" + extra_context[:11500] if extra_context else "")}]
         async with AsyncOpenAI(api_key=key,base_url=base_url,timeout=150) as client:
             for _ in range(8):
                 response = await client.responses.create(
