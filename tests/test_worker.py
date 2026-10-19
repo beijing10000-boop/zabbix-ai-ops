@@ -1,17 +1,7 @@
 import asyncio
-import base64
-import hashlib
-import hmac
 from unittest.mock import AsyncMock
 
 from app import worker
-
-def test_feishu_sign_uses_real_newline():
-    stamp, secret = "1700000000", "key"
-    expected = base64.b64encode(hmac.new((stamp + "\n" + secret).encode(), digestmod=hashlib.sha256).digest()).decode()
-    wrong = base64.b64encode(hmac.new((stamp + "\\n" + secret).encode(), digestmod=hashlib.sha256).digest()).decode()
-    assert worker.feishu_sign(stamp, secret) == expected
-    assert expected != wrong
 
 def test_alert_prompt_keeps_required_json_contract():
     value = worker.alert_instructions("请重点分析网络性能")
@@ -30,3 +20,21 @@ def test_ai_failure_still_notifies(monkeypatch):
     assert result == {"event_id":"12345","diagnosed":False,"ai_failed":True}
     assert len(sent) == 1
     assert "AI 分析失败" in str(sent[0])
+
+def test_enterprise_app_alert_notifier(monkeypatch):
+    from app import feishu_client
+    sent = []
+    monkeypatch.setattr(worker, "cfg", lambda k: {
+        "feishu_enabled": "true",
+        "feishu_alert_chat_ids": "oc_test_1,oc_test_2",
+        "allowed_chat_ids": "",
+    }.get(k, ""))
+    async def token(_client):
+        return "mock-token"
+    async def request(_client, method, url, auth, **kwargs):
+        sent.append(kwargs["json"]["receive_id"])
+        return {"code": 0}
+    monkeypatch.setattr(feishu_client, "get_token", token)
+    monkeypatch.setattr(feishu_client, "request", request)
+    asyncio.run(worker.notify({"header": {"title": {"content": "test"}}}))
+    assert sent == ["oc_test_1", "oc_test_2"]
