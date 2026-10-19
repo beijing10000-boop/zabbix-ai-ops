@@ -21,8 +21,8 @@ ADMIN_TOKEN = os.getenv("ADMIN_API_TOKEN", "")
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 app = FastAPI(title="Zabbix AI Ops", version="0.1.0")
 SENSITIVE = {"openai_api_key", "mcp_token", "lark_app_secret", "feishu_webhook_url", "feishu_sign_secret", "zabbix_webhook_secret", "write_mcp_token"}
-ALLOWED = SENSITIVE | {"openai_base_url", "openai_model", "mcp_url", "lark_app_id", "allowed_chat_ids", "min_severity", "ai_prompt", "ai_alert_prompt", "ai_qa_prompt", "feishu_enabled", "ai_approver_open_ids", "web_protocol", "web_public_host", "write_mcp_url", "write_enabled"}
-DEFAULTS = {"min_severity": "3", "feishu_enabled": "false", "web_protocol": "http", "write_enabled": "false"}
+ALLOWED = SENSITIVE | {"openai_base_url", "openai_model", "mcp_url", "lark_app_id", "allowed_chat_ids", "min_severity", "ai_prompt", "ai_alert_prompt", "ai_qa_prompt", "feishu_enabled", "ai_approver_open_ids", "web_protocol", "web_public_host", "write_mcp_url", "write_enabled", "feishu_alert_mode", "feishu_alert_chat_ids"}
+DEFAULTS = {"min_severity": "3", "feishu_enabled": "false", "web_protocol": "http", "write_enabled": "false", "feishu_alert_mode": "app"}
 
 def cipher():
     if not MASTER_KEY:
@@ -91,6 +91,8 @@ def update_settings(body: SettingsUpdate):
         raise HTTPException(status_code=422, detail=f"invalid settings: {sorted(invalid)}")
     if any(not isinstance(v, str) or len(v) > 12000 for v in body.values.values()):
         raise HTTPException(status_code=422, detail="invalid value")
+    if "feishu_alert_mode" in body.values and body.values["feishu_alert_mode"] not in ("app", "webhook"):
+        raise HTTPException(422, "飞书告警方式只能是 app 或 webhook")
     if "write_enabled" in body.values:
         raise HTTPException(422, "请通过写入权限开关专用接口进行启用或关闭")
     if "write_mcp_url" in body.values or "write_mcp_token" in body.values:
