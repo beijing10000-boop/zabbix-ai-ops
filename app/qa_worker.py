@@ -2,6 +2,7 @@
 import asyncio
 import logging
 import os
+from .main import read_setting
 from redis import Redis
 from rq import Worker, Queue
 from .ai_agent import ask
@@ -18,7 +19,7 @@ async def execute(chat_id, question, message_id, sender_open_id=None, parent_id=
     if action is None:
         action = request_change(question, sender_open_id, chat_id)
     if action is not None:
-        await send_card(chat_id, "Zabbix 变更审批" if os.getenv("AI_WRITE_ENABLED", "false").lower() == "true" else "Zabbix 变更审批（模拟）", action, "orange")
+        await send_card(chat_id, "Zabbix 变更审批" if read_setting("write_enabled") == "true" else "Zabbix 变更审批（模拟）", action, "orange")
         log.info("FEISHU_APPROVAL_HANDLED message_id=%s", message_id)
         return
 
