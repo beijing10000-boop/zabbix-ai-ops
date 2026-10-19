@@ -40,7 +40,12 @@ curl http://127.0.0.1:8088/healthz
 - [配置说明](docs/CONFIGURATION.md)
 - [常见问题](docs/TROUBLESHOOTING.md)
 - [开发状态](docs/STATUS.md)
-- [后续路线图](docs/ROADMAP.md)\n- [Zabbix Webhook 对接](docs/ZABBIX.md)\n- [飞书机器人配置](docs/FEISHU.md)\n- [升级与备份](docs/UPGRADING.md)\n- [安全说明](SECURITY.md)\n- [回复告警与变更审批](docs/CHANGE_APPROVAL.md)
+- [后续路线图](docs/ROADMAP.md)
+- [Zabbix Webhook 对接](docs/ZABBIX.md)
+- [飞书机器人配置](docs/FEISHU.md)
+- [升级与备份](docs/UPGRADING.md)
+- [安全说明](SECURITY.md)
+- [回复告警与变更审批](docs/CHANGE_APPROVAL.md)
 
 ## 安全声明
 
