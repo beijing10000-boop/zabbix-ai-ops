@@ -93,6 +93,12 @@ def update_settings(body: SettingsUpdate):
         raise HTTPException(status_code=422, detail="invalid value")
     if "write_enabled" in body.values:
         raise HTTPException(422, "请通过写入权限开关专用接口进行启用或关闭")
+    if "write_mcp_url" in body.values or "write_mcp_token" in body.values:
+        # Any change to write endpoint or credentials revokes prior capability approval.
+        # Admin must explicitly revalidate the target before another write.
+        with connection() as db:
+            db.execute("INSERT INTO settings(key,value,secret) VALUES ('write_enabled','false',0) ON CONFLICT(key) DO UPDATE SET value='false',secret=0")
+            db.execute("INSERT INTO audit(action,key) VALUES ('write_disabled','write_mcp_config_changed')")
     with connection() as db:
         for key, val in body.values.items():
             if key in SENSITIVE and val == "********":
