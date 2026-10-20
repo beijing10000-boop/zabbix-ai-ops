@@ -41,3 +41,13 @@ input,textarea,select{border:1px solid var(--separator);border-radius:9px;backgr
 @media(max-width:900px){.sidebar{display:none}.main-shell{margin-left:0}.compact-title{padding:0 18px}#content{padding:18px 20px 110px}.bottom-nav{display:flex;position:fixed;bottom:0;left:0;right:0;z-index:45;justify-content:space-around;gap:2px;padding:8px 4px calc(8px + env(safe-area-inset-bottom));background:var(--sidebar);backdrop-filter:saturate(180%) blur(20px);border-top:1px solid var(--separator)}.bottom-nav button{flex:1;min-width:0;min-height:50px;background:transparent;color:var(--label-2);font-size:10px;display:flex;flex-direction:column;align-items:center;gap:3px}.bottom-nav button svg{width:20px;height:20px}.bottom-nav button.active{color:var(--blue)}.assistant-page{min-height:calc(100dvh - 245px)}.composer{bottom:74px}}
 @media(max-width:560px){#content{padding:12px 16px 105px}.card-grid{gap:10px}.card-grid>*{padding:15px;min-height:120px}.metric-card .card-value,.health-card .card-value{font-size:25px}.large-title{margin:14px 0 26px}.sheet{top:auto;bottom:0;left:0;width:100%;transform:none;border-radius:22px 22px 0 0;padding-bottom:calc(22px + env(safe-area-inset-bottom))}.group-row{gap:8px}.row-trailing{max-width:48%}.setting-input{max-width:145px}.row-title{font-size:14px}.bubble{max-width:93%}.unsaved-bar{bottom:75px}}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{animation-duration:.01ms!important;transition-duration:.01ms!important;scroll-behavior:auto!important}}
+
+/* B4 keyboard and pointer target sizes */
+.button,.segmented button{min-height:44px;min-width:44px}
+.switch{height:44px;background:transparent}
+.switch:after{content:"";position:absolute;left:0;top:6.5px;width:51px;height:31px;background:var(--fill);border-radius:99px;transition:background var(--dur);z-index:0}
+.switch:before{top:9px;z-index:1}
+.switch[aria-checked=true]{background:transparent}
+.switch[aria-checked=true]:after{background:var(--green)}
+.nav-link,.bottom-nav button{min-width:44px}
+@media(max-width:560px){.segmented button{min-width:44px;flex:0 0 auto}}
