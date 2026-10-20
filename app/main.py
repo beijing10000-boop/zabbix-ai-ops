@@ -94,11 +94,11 @@ class SettingsUpdate(BaseModel):
     values: dict[str, str]
 
 class Alert(BaseModel):
-    event_id: str = Field(min_length=1, max_length=64)
+    event_id: str = Field(pattern=r"^\d{1,20}$")
     event_value: str = "1"
     event_source: str = "0"
     event_name: str = ""
-    severity: str = "0"
+    severity: str = Field(default="0", pattern=r"^[0-5]$")
     host_name: str = ""
     host_groups: str = ""
     event_date: str = ""
@@ -107,10 +107,10 @@ class Alert(BaseModel):
     recovery_time: str = ""
     recovery_value: str = ""
     event_duration: str = ""
-    recovery_id: str = ""
-    host_id: str = ""
+    recovery_id: str = Field(default="", pattern=r"^\d{0,20}$")
+    host_id: str = Field(default="", pattern=r"^\d{0,20}$")
     host_ip: str = ""
-    trigger_id: str = ""
+    trigger_id: str = Field(default="", pattern=r"^\d{0,20}$")
     subject: str = ""
     message: str = ""
 
