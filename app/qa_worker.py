@@ -2,7 +2,7 @@
 import asyncio
 import logging
 import os
-from .main import read_setting
+from .main import read_setting, record_ai_question
 from redis import Redis
 from rq import Worker, Queue
 from .ai_agent import ask
@@ -24,6 +24,7 @@ async def execute(chat_id, question, message_id, sender_open_id=None, parent_id=
         log.info("FEISHU_APPROVAL_HANDLED message_id=%s", message_id)
         return
 
+    record_ai_question("feishu", message_id, question, "running")
     progress_id = None
     try:
         progress_id = await reply_card(message_id, "AI 分析中",
@@ -45,6 +46,7 @@ async def execute(chat_id, question, message_id, sender_open_id=None, parent_id=
             except Exception:
                 log.exception("FEISHU_REPLY_LOOKUP_FAILED message_id=%s", message_id)
         result = await ask(question, context)
+        record_ai_question("feishu", message_id, question, "success")
         remember(chat_id, message_id, progress_id, question, result, stored)
         if progress_id:
             try:
@@ -54,7 +56,8 @@ async def execute(chat_id, question, message_id, sender_open_id=None, parent_id=
             except Exception:
                 log.exception("FEISHU_CARD_UPDATE_FAILED message_id=%s", message_id)
         await reply_card(message_id, "AI 分析完成", result)
-    except Exception:
+    except Exception as exc:
+        record_ai_question("feishu", message_id, question, "failed", type(exc).__name__)
         log.exception("FEISHU_QA_FAILED message_id=%s", message_id)
         if progress_id:
             try:
