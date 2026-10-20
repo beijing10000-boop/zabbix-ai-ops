@@ -23,8 +23,10 @@ async def request(client, method, url, token=None, **kwargs):
     async def _once(current_token):
         headers = {"Authorization": "Bearer "+current_token} if current_token else {}
         response = await client.request(method,url,headers=headers,**kwargs)
-        response.raise_for_status()
-        return response.json()
+        data=response.json()
+        if data.get('code') not in _EXPIRED:
+            response.raise_for_status()
+        return data
     data = await _once(token)
     if token and data.get("code") in _EXPIRED:
         token_redis().delete(TOKEN_KEY)
