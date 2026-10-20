@@ -124,6 +124,12 @@ def beijing_time(value):
         return value
 
 
+def increment_rate_limit(redis, key, limit, seconds):
+    count=redis.incr(key)
+    if count==1:
+        redis.expire(key,seconds)
+    return count <= limit
+
 def require_admin(request: Request):
     from .feishu_auth import authenticate
     return authenticate(request)
@@ -384,7 +390,12 @@ async def test_ai_model():
 
 
 @app.post("/api/v1/ask", dependencies=[Depends(require_admin)])
-async def ask_web(body: AskRequest):
+async def ask_web(body: AskRequest, request: Request):
+    import hashlib
+    user_id=require_admin(request)["open_id"]
+    token=hashlib.sha256(user_id.encode()).hexdigest()[:20]
+    if not increment_rate_limit(Redis.from_url(REDIS_URL),"rate:web:"+token+":"+str(int(time.time()//60)),5,70):
+        raise HTTPException(429,"每位管理员每分钟最多 5 次问答")
     """Use the same read-only MCP agent as Feishu; never expose write tools."""
     from .ai_agent import ask
     import uuid
