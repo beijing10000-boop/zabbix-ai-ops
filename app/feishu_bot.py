@@ -2,6 +2,7 @@
 import json
 import logging
 import re
+import time
 from redis import Redis
 from rq import Queue
 import lark_oapi as lark
@@ -34,6 +35,22 @@ def on_message(data: P2ImMessageReceiveV1):
         return
     if not question:
         log.info("FEISHU_FILTERED reason=empty_question message_id=%s",msg_id)
+        return
+    sender_id = getattr(getattr(sender,"sender_id",None),"open_id",None)
+    if not sender_id:
+        return
+    minute = int(time.time() // 60)
+    day = int(time.time() // 86400)
+    user_key = f"zabbix-ai:rate:feishu:user:{sender_id}:{minute}"
+    group_key = f"zabbix-ai:rate:feishu:group:{message.chat_id}:{day}"
+    with redis.pipeline(transaction=True) as pipe:
+        pipe.incr(user_key)
+        pipe.expire(user_key, 120)
+        pipe.incr(group_key)
+        pipe.expire(group_key, 172800)
+        limits = pipe.execute()
+    if limits[0] > 5 or limits[2] > 300:
+        log.warning("FEISHU_QA_RATE_LIMITED message_id=%s", msg_id)
         return
     key="feishu-ai:message:"+msg_id
     if not redis.set(key,"queued",nx=True,ex=86400):

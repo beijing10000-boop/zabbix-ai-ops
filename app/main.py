@@ -385,10 +385,21 @@ async def test_ai_model():
 
 
 @app.post("/api/v1/ask", dependencies=[Depends(require_admin)])
-async def ask_web(body: AskRequest):
+async def ask_web(body: AskRequest, request: Request):
     """Use the same read-only MCP agent as Feishu; never expose write tools."""
     from .ai_agent import ask
     import uuid
+    from .feishu_auth import authenticate
+    admin = authenticate(request)
+    import time as _time
+    client = Redis.from_url(REDIS_URL)
+    key = "zabbix-ai:rate:web:" + str(admin["open_id"]) + ":" + str(int(_time.time() // 60))
+    with client.pipeline(transaction=True) as pipe:
+        pipe.incr(key)
+        pipe.expire(key, 120)
+        count = pipe.execute()[0]
+    if count > 5:
+        raise HTTPException(status_code=429, detail="每位管理员每分钟最多提问 5 次")
     request_id = uuid.uuid4().hex
     record_ai_question("web", request_id, body.question, "running")
     try:
