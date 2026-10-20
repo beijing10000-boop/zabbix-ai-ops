@@ -38,6 +38,18 @@ def connection():
     try:
         db.execute("PRAGMA journal_mode=WAL")
         db.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, secret INTEGER NOT NULL)")
+        # One-time migration of the legacy admin allowlist. Runtime authorization
+        # only ever reads the Web-managed settings table.
+        legacy_admins = os.getenv("FEISHU_ADMIN_OPEN_IDS", "").strip()
+        migrated = db.execute("SELECT 1 FROM settings WHERE key='feishu_admin_migration_done'").fetchone()
+        if not migrated:
+            if legacy_admins and not db.execute(
+                "SELECT 1 FROM settings WHERE key='feishu_admin_open_ids'"
+            ).fetchone():
+                db.execute("INSERT INTO settings(key,value,secret) VALUES ('feishu_admin_open_ids',?,0)",
+                           (legacy_admins,))
+            db.execute("INSERT INTO settings(key,value,secret) VALUES ('feishu_admin_migration_done','1',0)")
+
         db.execute("CREATE TABLE IF NOT EXISTS audit (id INTEGER PRIMARY KEY AUTOINCREMENT, action TEXT, key TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP)")
         db.execute("""CREATE TABLE IF NOT EXISTS alert_events (id INTEGER PRIMARY KEY AUTOINCREMENT, event_id TEXT NOT NULL, event_value TEXT NOT NULL, event_name TEXT, host_name TEXT, severity INTEGER, received_at TEXT DEFAULT CURRENT_TIMESTAMP, notify_status TEXT DEFAULT 'queued', ai_status TEXT DEFAULT 'not_required', UNIQUE(event_id,event_value))""")
         db.execute("""CREATE TABLE IF NOT EXISTS ai_questions (
