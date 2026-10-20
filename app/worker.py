@@ -133,23 +133,24 @@ def make_card(event, info=None, *, analysis=False):
         {"tag":"div", "text":{"tag":"lark_md", "content":"\n".join(lines)}}
     ]
     if not recovery and not analysis:
-        host_id=str(event.get("host_id") or "")
-        trigger_id=str(event.get("trigger_id") or "")
-        if host_id.isdigit() and trigger_id.isdigit():
+        host_id = str(event.get("host_id") or "")
+        trigger_id = str(event.get("trigger_id") or "")
+        event_id = str(event.get("event_id") or "")
+        if host_id.isdigit() and trigger_id.isdigit() and event_id.isdigit():
             from .alert_mute import action_signature
-            actions=[]
-            for hours, label in ((1,"🔕 1小时"),(4,"4小时"),(24,"24小时"),
-                                 (72,"3天"),(168,"7天")):
-                actions.append({"tag":"button","text":{"tag":"plain_text","content":label},
-                    "type":"primary" if hours==1 else "default",
-                    "value":{"op":"mute_alert","host_id":host_id,
-                             "trigger_id":trigger_id,"hours":hours,
-                             "sig":action_signature(host_id,trigger_id,hours)}})
-            elements.append({"tag":"hr"})
-            elements.append({"tag":"div","text":{"tag":"lark_md",
-                "content":"**🔕 暂停此类飞书告警**  · 选择屏蔽时长"}})
-            elements.append({"tag":"action","actions":actions})
-    if analysis and not recovery and sev in ("4","5"):
+            elements.append({"tag": "hr"})
+            elements.append({"tag": "div", "text": {"tag": "lark_md",
+                "content": "**告警操作**  ·  临时屏蔽仅影响后续飞书通知"}})
+            elements.append({"tag": "action", "actions": [
+                {"tag": "button", "text": {"tag": "plain_text", "content": "🔕 暂时屏蔽"},
+                 "type": "default", "value": {"op": "choose_mute", "event_id": event_id,
+                     "trigger_id": trigger_id,
+                     "sig": action_signature(event_id, trigger_id, 0)}},
+                {"tag": "button", "text": {"tag": "plain_text", "content": "🤖 AI分析"},
+                 "type": "primary", "value": {"op": "analyze_alert", "event_id": event_id,
+                     "trigger_id": trigger_id, "sig": action_signature(event_id, trigger_id, 0)}}
+            ]})
+    if analysis and not recovery:
         for label, field, size in (("故障原因","cause",120),("处理建议","action",160),("AI 分析","analysis",500)):
             detail = valid_macro(info.get(field))
             if detail:
@@ -284,3 +285,20 @@ def process_alert(event):
 if __name__ == "__main__":
     redis = Redis.from_url(os.getenv("REDIS_URL","redis://redis:6379/0"))
     Worker([Queue("ai-alerts", connection=redis)], connection=redis).work()
+
+async def analyze_on_demand(event):
+    """Analyze a saved alert on explicit Feishu request using the existing read-only pipeline."""
+    update_event(event, ai_status="running")
+    try:
+        result = await analyze(event)
+        await notify(make_card(event, result, analysis=True))
+        update_event(event, ai_status="success")
+        return {"diagnosed": True, "event_id": event["event_id"]}
+    except Exception:
+        update_event(event, ai_status="failed")
+        log.exception("MANUAL_AI_ANALYSIS_FAILED event_id=%s", event.get("event_id"))
+        raise
+
+
+def process_manual_analysis(event):
+    return asyncio.run(analyze_on_demand(event))

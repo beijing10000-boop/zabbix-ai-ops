@@ -156,9 +156,9 @@ def test_alert_mute_button_targets_host_and_trigger():
            "severity":"2","event_value":"1","event_name":"Load high"}
     card=worker.make_card(event)
     buttons=[a for el in card["elements"] if el["tag"]=="action" for a in el["actions"]]
-    assert len(buttons)==5
-    assert {b["value"]["hours"] for b in buttons}=={1,4,24,72,168}
-    assert all(b["value"]["host_id"]=="101" and b["value"]["trigger_id"]=="202" for b in buttons)
+    assert len(buttons)==2
+    assert {b["value"]["op"] for b in buttons}=={"choose_mute","analyze_alert"}
+    assert all(b["value"]["trigger_id"]=="202" and b["value"]["event_id"]=="777001" for b in buttons)
     assert all("url" not in b for b in buttons)
     recovery=worker.make_card({**event,"event_value":"0"})
     assert not any(el["tag"]=="action" for el in recovery["elements"])
