@@ -353,11 +353,16 @@ async def test_ai_model():
 async def ask_web(body: AskRequest):
     """Use the same read-only MCP agent as Feishu; never expose write tools."""
     from .ai_agent import ask
+    import uuid
+    request_id = uuid.uuid4().hex
+    record_ai_question("web", request_id, body.question, "running")
     try:
         import asyncio
         answer = await asyncio.wait_for(ask(body.question), timeout=180)
+        record_ai_question("web", request_id, body.question, "success")
         return {"ok": True, "answer": answer}
     except Exception as exc:
+        record_ai_question("web", request_id, body.question, "failed", type(exc).__name__)
         import logging
         logging.getLogger(__name__).warning(
             "WEB_QA_FAILED error_type=%s", type(exc).__name__)
