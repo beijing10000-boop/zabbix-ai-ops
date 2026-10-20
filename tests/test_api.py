@@ -41,6 +41,8 @@ def test_web_ask_calls_read_only_agent(monkeypatch):
         assert question == "查询严重告警"
         return "已从 MCP 查询"
     monkeypatch.setattr(ai_agent, "ask", fake_ask)
+    from app import main
+    monkeypatch.setattr(main,"increment_rate_limit",lambda *a: True)
     response=client.post("/api/v1/ask",
         headers={"Authorization":"Bearer test-admin"},
         json={"question":"查询严重告警"})
@@ -92,3 +94,18 @@ def test_ai_question_metrics_separate_from_alerts():
     assert len(found) == 1 and found[0]["status"] == "success"
     assert found[0]["source"] == "feishu"
     assert client.get("/api/v1/qa-events").status_code == 401
+
+def test_cached_setting_uses_at_most_two_database_connections(monkeypatch):
+    from app import main
+    main.init_db()
+    main.invalidate_settings_cache()
+    count=0
+    original=main.sqlite3.connect
+    def counted(*args,**kwargs):
+        nonlocal count
+        count+=1
+        return original(*args,**kwargs)
+    monkeypatch.setattr(main.sqlite3,"connect",counted)
+    for _ in range(100):
+        main.read_setting("ai_min_severity")
+    assert count <= 2

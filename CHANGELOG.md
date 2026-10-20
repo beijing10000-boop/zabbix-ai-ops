@@ -19,3 +19,6 @@
 - Initialized private development repository from available prior generated materials.
 - Added Feishu QA progress-card adapter and initial operational documentation.
 - No production release has been tagged.
+
+## Unreleased
+- A7: 飞书屏蔽按钮改用域隔离的派生 HMAC 密钥；**已发出的旧卡片按钮失效**，请从新告警卡片操作。

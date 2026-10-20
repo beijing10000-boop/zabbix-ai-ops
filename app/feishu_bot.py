@@ -8,7 +8,7 @@ import lark_oapi as lark
 from lark_oapi.api.im.v1 import P2ImMessageReceiveV1
 from lark_oapi.event.callback.model.p2_card_action_trigger import P2CardActionTrigger, P2CardActionTriggerResponse
 from .alert_mute import handle_mute_action
-from .main import read_setting, REDIS_URL
+from .main import read_setting, REDIS_URL, increment_rate_limit
 
 log = logging.getLogger(__name__)
 redis = Redis.from_url(REDIS_URL)
@@ -42,6 +42,15 @@ def on_message(data: P2ImMessageReceiveV1):
     sender_id = getattr(getattr(sender,"sender_id",None),"open_id",None)
     parent_id = getattr(message,"parent_id",None)
     root_id = getattr(message,"root_id",None)
+    import time
+    minute=int(time.time()//60)
+    day=int(time.time()//86400)
+    user_key="feishu-rate:user:"+str(sender_id)+":"+str(minute)
+    chat_key="feishu-rate:chat:"+str(message.chat_id)+":"+str(day)
+    if not increment_rate_limit(redis,user_key,5,70) or not increment_rate_limit(redis,chat_key,300,86470):
+        redis.delete(key)
+        log.warning("FEISHU_RATE_LIMITED message_id=%s",msg_id)
+        return
     try:
         queue.enqueue("app.qa_worker.process_question", message.chat_id,question[:3000],msg_id,
                       sender_id, parent_id or root_id, root_id,
