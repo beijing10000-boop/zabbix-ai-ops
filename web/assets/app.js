@@ -137,7 +137,7 @@ function statCard(label,value,iconName,detail){
  const top=n('div','stat-top');top.append(n('span','',label),UI.icon(iconName));
  const number=n('strong','stat-num nums',value);
  const card=UI.Card([top,number],'stat-card'+(detail?' actionable':''));
- if(detail){card.setAttribute('aria-label',label+'：查看明细');const btn=n('button','stat-card actionable');
+ if(detail){card.setAttribute('aria-label',label+'：查看明细');const btn=n('button','card stat-card actionable');
   btn.type='button';btn.append(...card.childNodes);btn.addEventListener('click',detail);return btn;}
  return card;
 }
