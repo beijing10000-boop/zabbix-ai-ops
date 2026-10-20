@@ -42,8 +42,8 @@ def test_http_callback_is_default_and_url_is_validated(monkeypatch):
         db.execute("DELETE FROM settings WHERE key IN ('web_protocol','web_public_host')")
     from app.main import invalidate_settings_cache
     invalidate_settings_cache()
-    monkeypatch.setenv("FEISHU_LOGIN_REDIRECT_URI","http://172.20.200.93:8088/api/v1/auth/callback")
-    assert _redirect_uri()=="http://172.20.200.93:8088/api/v1/auth/callback"
+    monkeypatch.setenv("FEISHU_LOGIN_REDIRECT_URI","http://zabbix.example.internal:8088/api/v1/auth/callback")
+    assert _redirect_uri()=="http://zabbix.example.internal:8088/api/v1/auth/callback"
     assert _secure_cookie() is False
     monkeypatch.setenv("FEISHU_LOGIN_REDIRECT_URI","http://example.invalid/evil")
     with pytest.raises(HTTPException): _redirect_uri()
@@ -53,8 +53,8 @@ def test_http_callback_is_default_and_url_is_validated(monkeypatch):
 
 def test_default_http_and_ui_https_switch(monkeypatch):
     from app import feishu_auth
-    from app.main import connection
-    monkeypatch.setenv("FEISHU_LOGIN_REDIRECT_URI","http://172.20.200.93:8088/api/v1/auth/callback")
+    from app.main import connection, invalidate_settings_cache
+    monkeypatch.setenv("FEISHU_LOGIN_REDIRECT_URI","http://zabbix.example.internal:8088/api/v1/auth/callback")
     with connection() as db:
         db.execute("DELETE FROM settings WHERE key IN ('web_protocol','web_public_host')")
     invalidate_settings_cache()

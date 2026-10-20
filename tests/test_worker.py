@@ -139,12 +139,13 @@ def test_duration_calculated_when_macro_unresolved():
         "recovery_date":"2026.10.20","recovery_time":"10:03:27",
         "event_duration":"{EVENT.DURATION}"})=="00:03:27"
 
-def test_zabbix_event_deep_link():
+def test_zabbix_event_deep_link(monkeypatch):
+    monkeypatch.setenv("ZABBIX_FRONTEND_URL","https://zabbix.example.internal")
     event={"event_id":"6057922","trigger_id":"102345","severity":"3",
         "event_value":"1","event_name":"Link down"}
     card=worker.make_card(event)
     body=card["elements"][0]["text"]["content"]
-    assert "[查看 Zabbix 告警 ↗](http://172.20.200.90:8080/tr_events.php?triggerid=102345&eventid=6057922)" in body
+    assert "[查看 Zabbix 告警 ↗](https://zabbix.example.internal/tr_events.php?triggerid=102345&eventid=6057922)" in body
     assert "172.20.200.93 转发" not in body
     recovery=worker.make_card({**event,"event_value":"0"})
     assert "eventid=6057922" in recovery["elements"][0]["text"]["content"]
