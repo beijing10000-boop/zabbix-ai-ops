@@ -9,6 +9,7 @@ from lark_oapi.api.im.v1 import P2ImMessageReceiveV1
 from lark_oapi.event.callback.model.p2_card_action_trigger import P2CardActionTrigger, P2CardActionTriggerResponse
 from .alert_mute import handle_mute_action
 from .main import read_setting, REDIS_URL
+from .rate_limit import permit, daily_key
 
 log = logging.getLogger(__name__)
 redis = Redis.from_url(REDIS_URL)
@@ -40,6 +41,12 @@ def on_message(data: P2ImMessageReceiveV1):
         log.info("FEISHU_DUPLICATE message_id=%s",msg_id)
         return
     sender_id = getattr(getattr(sender,"sender_id",None),"open_id",None)
+    if not sender_id or not permit("feishu:user:"+sender_id,5,60):
+        log.warning("FEISHU_RATE_LIMIT_USER message_id=%s",msg_id)
+        return
+    if not permit(daily_key(message.chat_id),300,90000):
+        log.warning("FEISHU_RATE_LIMIT_CHAT message_id=%s",msg_id)
+        return
     parent_id = getattr(message,"parent_id",None)
     root_id = getattr(message,"root_id",None)
     try:
