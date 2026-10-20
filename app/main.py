@@ -15,6 +15,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from cryptography.fernet import Fernet, InvalidToken
 from redis import Redis
@@ -157,6 +158,8 @@ class Alert(BaseModel):
     trigger_id: str = Field(default="", pattern=r"^\d{0,20}$")
     subject: str = ""
     message: str = ""
+
+app.mount("/assets", StaticFiles(directory=str(Path(__file__).parent.parent / "web" / "assets")), name="assets")
 
 @app.get("/")
 def home():
