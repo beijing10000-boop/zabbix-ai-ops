@@ -5,7 +5,7 @@ import logging
 from redis import Redis
 from rq import Queue
 from .alert_mute import action_signature
-from .main import connection, REDIS_URL
+from .main import connection, REDIS_URL, read_setting
 
 log = logging.getLogger(__name__)
 
@@ -32,7 +32,8 @@ def _event(value):
 
 def _authorized(operator_open_id):
     import os
-    admins = {s.strip() for s in os.getenv("FEISHU_ADMIN_OPEN_IDS", "").split(",") if s.strip()}
+    ids = read_setting("feishu_admin_open_ids") or os.getenv("FEISHU_ADMIN_OPEN_IDS", "")
+    admins = {s.strip() for s in ids.split(",") if s.strip()}
     return operator_open_id in admins if operator_open_id else False
 
 def handle_choose_mute(value, operator_open_id):
