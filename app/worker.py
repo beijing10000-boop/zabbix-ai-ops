@@ -150,7 +150,7 @@ def make_card(event, info=None, *, analysis=False):
                  "type": "primary", "value": {"op": "analyze_alert", "event_id": event_id,
                      "trigger_id": trigger_id, "sig": action_signature(event_id, trigger_id, 0)}}
             ]})
-    if analysis and not recovery and sev in ("4","5"):
+    if analysis and not recovery:
         for label, field, size in (("故障原因","cause",120),("处理建议","action",160),("AI 分析","analysis",500)):
             detail = valid_macro(info.get(field))
             if detail:
