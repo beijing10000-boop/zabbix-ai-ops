@@ -9,6 +9,7 @@ from openai import AsyncOpenAI
 from redis import Redis
 from rq import Worker, Queue
 from .main import read_setting
+from .text_safety import md_safe
 
 log = logging.getLogger(__name__)
 BASE_PROMPT = ("你是资深 Zabbix 运维分析师。只允许只读查询。严禁修改系统。"
@@ -48,11 +49,11 @@ async def analyze(event):
     return data
 
 def safe(value,n):
-    return str(value or "未提供").replace("\n"," ")[:n]
+    return md_safe(str(value or "未提供").replace("\n"," "), n)
 
 def valid_macro(value):
     """Suppress unresolved Zabbix macros, empty values and display placeholders."""
-    value = str(value or "").strip()
+    value = md_safe(value, 2000).strip()
     return value if value and "{" not in value and value not in ("待查询", "未查到", "未提供", "UNKNOWN") else ""
 
 
@@ -107,19 +108,19 @@ def make_card(event, info=None, *, analysis=False):
     if recovery:
         started = valid_macro(event.get("event_date")) and valid_macro(event.get("event_time"))
         if started:
-            lines.append("**告警时间**  " + event["event_date"] + " " + event["event_time"])
+            lines.append("**告警时间**  " + md_safe(event["event_date"],50) + " " + md_safe(event["event_time"],50))
         recovery_date = valid_macro(event.get("recovery_date"))
         recovery_time = valid_macro(event.get("recovery_time"))
         if recovery_date and recovery_time:
-            lines.append("**恢复时间**  " + recovery_date + " " + recovery_time)
+            lines.append("**恢复时间**  " + md_safe(recovery_date,50) + " " + md_safe(recovery_time,50))
         duration = event_duration(event)
         if duration:
-            lines.append("**持续时间**  " + duration)
+            lines.append("**持续时间**  " + md_safe(duration,100))
     else:
         occurred_date = valid_macro(event.get("event_date"))
         occurred_time = valid_macro(event.get("event_time"))
         if occurred_date and occurred_time:
-            lines.append("**发生时间**  " + occurred_date + " " + occurred_time)
+            lines.append("**发生时间**  " + md_safe(occurred_date,50) + " " + md_safe(occurred_time,50))
     lines.extend([
         "**事件名称**  " + safe(event_name, 250),
         "**事件 ID**  " + safe(event.get("event_id"), 40),
