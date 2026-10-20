@@ -23,7 +23,7 @@ function checkMuteLink(){const p=new URLSearchParams(location.search),host=p.get
 async function refreshMetrics(){try{const m=await api('/api/v1/alert-stats');document.getElementById('metric-problems').textContent=m.problems;document.getElementById('metric-recoveries').textContent=m.recoveries;document.getElementById('metric-ai').textContent=m.ai_analyses;const q=await api('/api/v1/qa-stats');document.getElementById('metric-qa').textContent=q.total;document.getElementById('metric-qa-breakdown').textContent=`成功 ${q.success} · 失败 ${q.failed} · 待完成 ${q.pending+q.running}`}catch(e){console.warn('metric load failed')}}
 async function openQaMetric(){const panel=document.getElementById('qa-detail');panel.style.display='block';const body=document.getElementById('qa-detail-body');body.replaceChildren();try{const rows=await api('/api/v1/qa-events?limit=100');const sources={feishu:'飞书',web:'Web'};const statuses={pending:'待处理',running:'分析中',success:'成功',failed:'失败'};for(const row of rows){const tr=document.createElement('tr');for(const value of [row.created_at,sources[row.source]||row.source,row.question,statuses[row.status]||row.status,row.completed_at||'—',row.error_type||'—']){const td=document.createElement('td');td.textContent=value??'';tr.append(td)}body.append(tr)}if(!rows.length){const tr=document.createElement('tr');const td=document.createElement('td');td.colSpan=6;td.textContent='暂无问答记录';tr.append(td);body.append(tr)}}catch(e){body.textContent='读取失败：'+e.message}panel.scrollIntoView({behavior:'smooth',block:'start'})}
 async function openMetric(kind){const names={problems:'接收告警明细',recoveries:'接收恢复明细',ai:'自动 AI 分析明细'};document.getElementById('metric-detail-title').textContent=names[kind];document.getElementById('metric-detail').style.display='block';const body=document.getElementById('metric-detail-body');body.replaceChildren();try{const rows=await api('/api/v1/alert-events?kind='+encodeURIComponent(kind)+'&limit=100');for(const row of rows){const tr=document.createElement('tr');for(const field of ['received_at','event_id','host_name','event_name','severity','notify_status','ai_status']){const td=document.createElement('td');if(field==='severity'){const levels=['未分类','信息','警告','一般严重','严重','灾难'];const colors=['#718096','#3b82f6','#b7791f','#dd6b20','#dc2626','#a31545'];const n=Number(row[field]);td.textContent=Number.isInteger(n)&&n>=0&&n<=5?levels[n]:'未知';td.style.fontWeight='700';td.style.color=colors[n]||'#718096'}else{td.textContent=row[field]??''}tr.append(td)}body.append(tr)}if(!rows.length){const tr=document.createElement('tr');const td=document.createElement('td');td.colSpan=7;td.textContent='暂无记录';tr.append(td);body.append(tr)}}catch(e){const tr=document.createElement('tr');const td=document.createElement('td');td.colSpan=7;td.textContent='读取失败：'+e.message;tr.append(td);body.append(tr)}document.getElementById('metric-detail').scrollIntoView({behavior:'smooth',block:'nearest'})}
-async function refreshStatus(){refreshMetrics();const out=document.getElementById('status-output'),debug=document.getElementById('debug-output');try{const r=await api('/api/v1/status');document.getElementById('db-state').textContent=r.database==='ok'?'正常':'异常';document.getElementById('redis-state').textContent=r.redis==='ok'?'正常':'异常';document.getElementById('alert-count').textContent=r.queues?.['ai-alerts']??0;document.getElementById('qa-count').textContent=r.queues?.['ai-questions']??0;out.textContent=JSON.stringify(r,null,2);debug.textContent=out.textContent}catch(e){out.textContent=e.message;debug.textContent=e.message}}
+async function refreshStatus(){refreshMetrics();const out=document.getElementById('status-output'),debug=document.getElementById('debug-output');try{const r=await api('/api/v1/status');renderServiceHealth(r);document.getElementById('db-state').textContent=r.database==='ok'?'正常':'异常';document.getElementById('redis-state').textContent=r.redis==='ok'?'正常':'异常';document.getElementById('alert-count').textContent=r.queues?.['ai-alerts']??0;document.getElementById('qa-count').textContent=r.queues?.['ai-questions']??0;out.textContent=JSON.stringify(r,null,2);debug.textContent=out.textContent}catch(e){out.textContent=e.message;debug.textContent=e.message}}
 async function testMcp(){const out=document.getElementById('debug-output');out.textContent='正在检查 MCP...';try{out.textContent=JSON.stringify(await api('/api/v1/test/mcp',{method:'POST'}),null,2)}catch(e){out.textContent='测试失败：'+e.message}}
 async function testAi(){const out=document.getElementById('debug-output');out.textContent='正在调用 AI 模型...';try{out.textContent=JSON.stringify(await api('/api/v1/test/ai',{method:'POST'}),null,2)}catch(e){out.textContent='测试失败：'+e.message}}
 async function askAi(){
@@ -104,3 +104,23 @@ function openNewMute(){
 document.getElementById('ask-question').addEventListener('keydown',event=>{
  if(event.key==='Enter'&&!event.shiftKey&&!event.isComposing){event.preventDefault();askAi()}
 });
+
+function renderServiceHealth(data){
+ const list=document.getElementById('service-list');if(!list)return;
+ const items=[
+  {label:'SQLite 数据库',kind:data.database==='ok'?'green':'red',value:data.database==='ok'?'运行正常':'连接异常'},
+  {label:'Redis',kind:data.redis==='ok'?'green':'red',value:data.redis==='ok'?'运行正常':'连接异常'},
+  {label:'告警队列',kind:'green',value:String(data.queues?.['ai-alerts']??0)+' 项待处理'},
+  {label:'问答队列',kind:'green',value:String(data.queues?.['ai-questions']??0)+' 项待处理'}
+ ];
+ list.replaceChildren(...items.map(item=>{
+  const row=document.createElement('div');row.className='grouped-row';
+  const label=document.createElement('span');label.className='service-label';
+  label.append(statusDot(item.kind,item.label));
+  const value=document.createElement('span');value.className='service-value';value.textContent=item.value;
+  row.append(label,value);return row;
+ }));
+}
+window.addEventListener('scroll',()=>{
+ document.querySelector('.top')?.classList.toggle('scrolled',window.scrollY>40);
+},{passive:true});
