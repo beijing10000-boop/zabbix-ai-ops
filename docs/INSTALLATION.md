@@ -51,7 +51,7 @@ docker compose logs -f alert-worker
 
 ## 飞书账号登录（新版 Web 控制台）
 
-后台使用企业自建飞书应用网页授权，登录用户 Open ID 必须处于服务器环境变量 `FEISHU_ADMIN_OPEN_IDS` 白名单中。服务器端保存随机会话，浏览器只保存 HttpOnly、Secure、SameSite=Lax Cookie；写入接口要求 CSRF Token。**要求 HTTPS，不能直接通过 `http://172.20.200.93:8088` 完成 OAuth 登录。**
+后台使用企业自建飞书应用网页授权，登录用户 Open ID 必须处于服务器环境变量 `FEISHU_ADMIN_OPEN_IDS` 白名单中。服务器端保存随机会话，浏览器只保存 HttpOnly、Secure、SameSite=Lax Cookie；写入接口要求 CSRF Token。**要求 HTTPS，不能直接通过 `http://aiops.example.internal:8088` 完成 OAuth 登录。**
 
 1. 在飞书开放平台的当前自建应用中开通网页授权，进入“安全设置 → 重定向 URL”，填写与服务器完全一致的 `https://你的域名/api/v1/auth/callback`，并发布应用配置。
 2. 将该域名使用 HTTPS 反向代理到 `127.0.0.1:8088`；建议仅管理网络能访问。
@@ -67,10 +67,10 @@ docker compose logs -f alert-worker
 **从旧 Web 迁移：** 旧版管理员 Token 不再是页面登录方式。仅在故障迁移时可临时设置 `ALLOW_LEGACY_ADMIN_TOKEN=true` 启用旧 API Token；结束后必须关闭。不要删除 `APP_ENCRYPTION_KEY` 或原 SQLite 数据卷。飞书应用的 OAuth 登录和飞书机器人 WebSocket 接收是独立功能，不要求立即把 92 的长连接切换到 93。
 
 
-### 临时 HTTP 登录测试（仅 172.20.200.93）
-飞书开放平台已经登记 `http://172.20.200.93:8088/api/v1/auth/callback` 时，允许在隔离测试网络里临时开启 HTTP 登录：
+### 临时 HTTP 登录测试（仅 aiops.example.internal）
+飞书开放平台已经登记 `http://aiops.example.internal:8088/api/v1/auth/callback` 时，允许在隔离测试网络里临时开启 HTTP 登录：
 ```ini
-FEISHU_LOGIN_REDIRECT_URI=http://172.20.200.93:8088/api/v1/auth/callback
+FEISHU_LOGIN_REDIRECT_URI=http://aiops.example.internal:8088/api/v1/auth/callback
 FEISHU_ALLOW_HTTP_TEST=true
 FEISHU_ADMIN_OPEN_IDS=ou_实际管理员OpenID
 ALLOW_LEGACY_ADMIN_TOKEN=false
@@ -81,11 +81,15 @@ ALLOW_LEGACY_ADMIN_TOKEN=false
 ### HTTP 默认，Web 管理页可切换 HTTPS
 现在系统默认使用 HTTP，不必设置 `FEISHU_ALLOW_HTTP_TEST`。首次启动在 `.env` 写入：
 ```ini
-FEISHU_LOGIN_REDIRECT_URI=http://172.20.200.93:8088/api/v1/auth/callback
+FEISHU_LOGIN_REDIRECT_URI=http://aiops.example.internal:8088/api/v1/auth/callback
 WEB_PROTOCOL=http
-WEB_PUBLIC_HOST=172.20.200.93:8088
+WEB_PUBLIC_HOST=aiops.example.internal:8088
 FEISHU_ADMIN_OPEN_IDS=ou_你的管理员OpenID
 ```
 随后在【系统配置】页面可修改【Web 访问协议】为 `https`、【Web 外部访问主机】为域名或 IP（可带端口），保存后同步修改飞书平台中的重定向 URL，再重新登录。**HTTPS 必须自行配置受信任证书和反向代理**；UI 选中 https 不会自动签发证书或使端口开始提供 TLS。为避免切换期间锁定后台，推荐先将 HTTPS 代理配置完成再修改 Web 设置。
 
 **安全告警**：HTTP 下 OAuth 授权码、会话 Cookie、配置与 AI/MCP 凭据在网络中没有加密。仅可在受控隔离测试环境使用，正式环境强烈建议 HTTPS。Web 只允许环境变量指定的管理员 Open ID 登录。
+
+## 生产部署 HTTPS
+
+生产必须通过 HTTPS 反向代理访问，Web Docker 端口默认仅监听 `127.0.0.1:8088`，需要正确配置 `WEB_PROTOCOL=https`、`WEB_PUBLIC_HOST=aiops.example.internal` 和 `ZABBIX_FRONTEND_URL=https://zabbix.example.internal`。飞书回调 URL 为 `https://aiops.example.internal/api/v1/auth/callback`，不得在生产直接开放 HTTP 登录。

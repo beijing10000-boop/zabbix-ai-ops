@@ -81,11 +81,11 @@ def zabbix_event_link(event):
     """Link only to a validated event/trigger pair; never accept arbitrary URLs."""
     event_id = str(event.get("event_id") or "")
     trigger_id = str(event.get("trigger_id") or "")
-    if not (event_id.isdigit() and trigger_id.isdigit()):
+    if not (event_id.isdigit() and trigger_id.isdigit() and os.getenv("ZABBIX_FRONTEND_URL", "")):
         return ""
     # Internal Zabbix 7.4 frontend currently runs on port 8080.
     from urllib.parse import urlencode
-    base = os.getenv("ZABBIX_FRONTEND_URL", "http://172.20.200.90:8080").rstrip("/")
+    base = os.getenv("ZABBIX_FRONTEND_URL", "").rstrip("/")
     return base + "/tr_events.php?" + urlencode({"triggerid": trigger_id, "eventid": event_id})
 
 
