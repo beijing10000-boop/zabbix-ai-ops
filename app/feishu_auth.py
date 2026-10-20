@@ -18,12 +18,6 @@ COOKIE = "zabbix_ai_session"
 STATE_COOKIE = "zabbix_ai_oauth_state"
 TTL = 8 * 3600
 
-def _tables(db):
-    db.execute("CREATE TABLE IF NOT EXISTS oauth_states (state_hash TEXT PRIMARY KEY, expires INTEGER NOT NULL)")
-    db.execute("""CREATE TABLE IF NOT EXISTS admin_sessions (
-        token_hash TEXT PRIMARY KEY, open_id TEXT NOT NULL, name TEXT NOT NULL,
-        csrf TEXT NOT NULL, expires INTEGER NOT NULL)""")
-
 def _hash(value):
     return hashlib.sha256(value.encode()).hexdigest()
 
@@ -74,7 +68,6 @@ def feishu_login():
     redirect = _redirect_uri()
     state = secrets.token_urlsafe(32)
     with connection() as db:
-        _tables(db)
         db.execute("DELETE FROM oauth_states WHERE expires < ?", (int(time.time()),))
         db.execute("INSERT INTO oauth_states VALUES (?,?)", (_hash(state),int(time.time())+300))
     target = "https://open.feishu.cn/open-apis/authen/v1/index?" + urlencode(
