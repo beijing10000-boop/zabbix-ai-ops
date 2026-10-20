@@ -68,6 +68,8 @@ def test_admin_timed_mute():
     found=client.get("/api/v1/alert-mutes",headers=h)
     assert any(x["host_id"]=="101" and x["trigger_id"]=="202" for x in found.json())
     assert client.post("/api/v1/alert-mutes",headers=h,json={"host_id":"101","trigger_id":"202","hours":500}).status_code == 422
+    assert client.delete("/api/v1/alert-mutes/101/202",headers=h).status_code == 200
+    assert not any(x["host_id"]=="101" and x["trigger_id"]=="202" for x in client.get("/api/v1/alert-mutes",headers=h).json())
 
 def test_beijing_time_handles_sqlite_utc():
     from app.main import beijing_time
