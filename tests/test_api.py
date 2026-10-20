@@ -54,25 +54,20 @@ def test_ai_model_requires_configuration(monkeypatch):
         headers={"Authorization":"Bearer test-admin"})
     assert response.status_code == 422
 
-def test_write_settings_are_secret_and_default_off():
+def test_write_endpoints_removed():
     h={"Authorization":"Bearer test-admin"}
-    response=client.get("/api/v1/settings",headers=h)
-    assert response.status_code == 200
-    assert response.json()["write_enabled"] == "false"
-    assert client.put("/api/v1/settings",headers=h,json={"values":{"write_mcp_url":"http://example.invalid/mcp","write_mcp_token":"secret-write"}}).status_code == 200
-    response=client.get("/api/v1/settings",headers=h).json()
-    assert response["write_mcp_url"] == "http://example.invalid/mcp"
-    assert response["write_mcp_token"] == "********"
+    assert client.post("/api/v1/write/enable",headers=h).status_code == 404
+    assert client.post("/api/v1/write/disable",headers=h).status_code == 404
+    assert client.put("/api/v1/settings",headers=h,json={"values":{"write_mcp_token":"unused"}}).status_code == 422
 
-def test_restricted_write_auth_and_enable_guards(monkeypatch):
+def test_admin_timed_mute():
     h={"Authorization":"Bearer test-admin"}
-    assert client.post("/api/v1/write/enable").status_code == 401
-    assert client.post("/api/v1/write/disable").status_code == 401
-    assert client.put("/api/v1/settings",headers=h,json={"values":{"write_enabled":"true"}}).status_code == 422
-    assert client.post("/api/v1/write/disable",headers=h).status_code == 200
-    from app import main
-    monkeypatch.setattr(main,"read_setting",lambda k:"" if k.startswith("write_") else "different")
-    assert client.post("/api/v1/write/enable",headers=h).status_code == 422
+    assert client.post("/api/v1/alert-mutes",json={"host_id":"101","trigger_id":"202","hours":1}).status_code == 401
+    r=client.post("/api/v1/alert-mutes",headers=h,json={"host_id":"101","trigger_id":"202","hours":1})
+    assert r.status_code == 200
+    found=client.get("/api/v1/alert-mutes",headers=h)
+    assert any(x["host_id"]=="101" and x["trigger_id"]=="202" for x in found.json())
+    assert client.post("/api/v1/alert-mutes",headers=h,json={"host_id":"101","trigger_id":"202","hours":500}).status_code == 422
 
 def test_beijing_time_handles_sqlite_utc():
     from app.main import beijing_time
