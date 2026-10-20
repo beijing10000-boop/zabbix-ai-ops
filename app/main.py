@@ -5,8 +5,8 @@ import json
 import os
 import secrets
 import sqlite3
-from datetime import datetime, timezone
-from zoneinfo import ZoneInfo
+from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from contextlib import contextmanager
 from pathlib import Path
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
@@ -15,6 +15,12 @@ from pydantic import BaseModel, Field
 from cryptography.fernet import Fernet, InvalidToken
 from redis import Redis
 from rq import Queue
+
+try:
+    SHANGHAI = ZoneInfo("Asia/Shanghai")
+except ZoneInfoNotFoundError:
+    # UTC+08 is valid for modern Shanghai timestamps if zone data is absent.
+    SHANGHAI = timezone(timedelta(hours=8))
 
 DATA_DIR = Path(os.getenv("DATA_DIR", "/app/data"))
 DB = DATA_DIR / "app.sqlite3"
@@ -75,8 +81,8 @@ def beijing_time(value):
         moment = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
         if moment.tzinfo is None:
             moment = moment.replace(tzinfo=timezone.utc)
-        return moment.astimezone(ZoneInfo("Asia/Shanghai")).strftime("%Y-%m-%d %H:%M:%S")
-    except (ValueError, TypeError):
+        return moment.astimezone(SHANGHAI).strftime("%Y-%m-%d %H:%M:%S")
+    except (ValueError, TypeError, ZoneInfoNotFoundError):
         return value
 
 
