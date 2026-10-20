@@ -136,13 +136,19 @@ def make_card(event, info=None, *, analysis=False):
         host_id=str(event.get("host_id") or "")
         trigger_id=str(event.get("trigger_id") or "")
         if host_id.isdigit() and trigger_id.isdigit():
-            from urllib.parse import urlencode
-            base=os.getenv("AI_OPS_PUBLIC_URL","http://172.20.200.93:8088").rstrip("/")
-            action_url=base+"/?"+urlencode({"mute_host":host_id,"mute_trigger":trigger_id})
-            elements.append({"tag":"action","actions":[{"tag":"button",
-                "text":{"tag":"plain_text","content":"暂不接收同类告警"},
-                "type":"default","url":action_url}]})
-
+            from .alert_mute import action_signature
+            actions=[]
+            for hours, label in ((1,"🔕 1小时"),(4,"4小时"),(24,"24小时"),
+                                 (72,"3天"),(168,"7天")):
+                actions.append({"tag":"button","text":{"tag":"plain_text","content":label},
+                    "type":"primary" if hours==1 else "default",
+                    "value":{"op":"mute_alert","host_id":host_id,
+                             "trigger_id":trigger_id,"hours":hours,
+                             "sig":action_signature(host_id,trigger_id,hours)}})
+            elements.append({"tag":"hr"})
+            elements.append({"tag":"div","text":{"tag":"lark_md",
+                "content":"**🔕 暂停此类飞书告警**  · 选择屏蔽时长"}})
+            elements.append({"tag":"action","actions":actions})
     if analysis and not recovery and sev in ("4","5"):
         for label, field, size in (("故障原因","cause",120),("处理建议","action",160),("AI 分析","analysis",500)):
             detail = valid_macro(info.get(field))
