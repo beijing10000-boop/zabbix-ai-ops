@@ -132,6 +132,17 @@ def make_card(event, info=None, *, analysis=False):
     elements = [
         {"tag":"div", "text":{"tag":"lark_md", "content":"\n".join(lines)}}
     ]
+    if not recovery and not analysis:
+        host_id=str(event.get("host_id") or "")
+        trigger_id=str(event.get("trigger_id") or "")
+        if host_id.isdigit() and trigger_id.isdigit():
+            from urllib.parse import urlencode
+            base=os.getenv("AI_OPS_PUBLIC_URL","http://172.20.200.93:8088").rstrip("/")
+            action_url=base+"/?"+urlencode({"mute_host":host_id,"mute_trigger":trigger_id})
+            elements.append({"tag":"action","actions":[{"tag":"button",
+                "text":{"tag":"plain_text","content":"暂不接收同类告警"},
+                "type":"default","url":action_url}]})
+
     if analysis and not recovery and sev in ("4","5"):
         for label, field, size in (("故障原因","cause",120),("处理建议","action",160),("AI 分析","analysis",500)):
             detail = valid_macro(info.get(field))
@@ -203,6 +214,19 @@ async def handle_alert(event):
     severity = int(event.get("severity", "0"))
     recovery = str(event.get("event_value", "1")) == "0"
     info = initial_info(event)
+    if not recovery:
+        from .main import connection
+        import time
+        host_id=str(event.get("host_id") or "")
+        trigger_id=str(event.get("trigger_id") or "")
+        if host_id.isdigit() and trigger_id.isdigit():
+            with connection() as db:
+                muted=db.execute("SELECT 1 FROM alert_mutes WHERE host_id=? AND trigger_id=? AND expires_at>?",
+                    (host_id,trigger_id,int(time.time()))).fetchone()
+            if muted:
+                update_event(event,notify_status="muted",ai_status="not_required")
+                log.info("FEISHU_ALERT_MUTED event_id=%s",event.get("event_id"))
+                return {"event_id":event["event_id"],"notified":False,"muted":True}
     try:
         await notify(make_card(event, info))
         update_event(event, notify_status="sent" if cfg("feishu_enabled").lower()=="true" else "disabled")
