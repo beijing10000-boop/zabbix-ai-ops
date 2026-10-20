@@ -40,6 +40,7 @@ def test_http_callback_is_default_and_url_is_validated(monkeypatch):
     from app.main import connection
     with connection() as db:
         db.execute("DELETE FROM settings WHERE key IN ('web_protocol','web_public_host')")
+    from app.main import invalidate_settings_cache
     invalidate_settings_cache()
     monkeypatch.setenv("FEISHU_LOGIN_REDIRECT_URI","http://172.20.200.93:8088/api/v1/auth/callback")
     assert _redirect_uri()=="http://172.20.200.93:8088/api/v1/auth/callback"
