@@ -6,6 +6,8 @@ from redis import Redis
 from rq import Queue
 import lark_oapi as lark
 from lark_oapi.api.im.v1 import P2ImMessageReceiveV1
+from lark_oapi.event.callback.model.p2_card_action_trigger import P2CardActionTrigger, P2CardActionTriggerResponse
+from .alert_mute import handle_mute_action
 from .main import read_setting, REDIS_URL
 
 log = logging.getLogger(__name__)
@@ -50,8 +52,30 @@ def on_message(data: P2ImMessageReceiveV1):
         log.exception("FEISHU_ENQUEUE_FAILED message_id=%s",msg_id)
         raise
 
+def on_card_action(data: P2CardActionTrigger) -> P2CardActionTriggerResponse:
+    """Callback must finish within three seconds. Never log tokens or signatures."""
+    try:
+        event=data.event
+        action=getattr(event,"action",None)
+        value=getattr(action,"value",None) or {}
+        if isinstance(value,str):
+            value=json.loads(value)
+        operator=getattr(event,"operator",None)
+        open_id=getattr(operator,"open_id",None) or getattr(operator,"operator_id",None)
+        ok,message=handle_mute_action(value,open_id)
+        log.info("FEISHU_MUTE_ACTION success=%s",ok)
+        return P2CardActionTriggerResponse({
+            "toast":{"type":"success" if ok else "error","content":message}
+        })
+    except Exception:
+        log.exception("FEISHU_MUTE_ACTION_FAILED")
+        return P2CardActionTriggerResponse({
+            "toast":{"type":"error","content":"操作失败，请稍后再试"}
+        })
+
 handler=(lark.EventDispatcherHandler.builder("","")
          .register_p2_im_message_receive_v1(on_message)
+         .register_p2_card_action_trigger(on_card_action)
          .build())
 
 def main():
