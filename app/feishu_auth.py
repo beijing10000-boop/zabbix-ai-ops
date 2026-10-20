@@ -29,11 +29,10 @@ def _hash(value):
 
 def _redirect_uri():
     """Resolve externally configured origin; default scheme HTTP, opt-in HTTPS."""
-    scheme = (read_setting("web_protocol") or os.getenv("WEB_PROTOCOL", "http")).lower()
+    scheme = (read_setting("web_protocol") or "http").lower()
     if scheme not in ("http", "https"):
         raise HTTPException(503, "访问协议必须为 http 或 https")
-    host = (read_setting("web_public_host") or os.getenv("WEB_PUBLIC_HOST", "")).strip()
-    old_uri = os.getenv("FEISHU_LOGIN_REDIRECT_URI", "").strip()
+    host = read_setting("web_public_host").strip()
     if host:
         # Host is administered via authenticated settings; block path, userinfo,
         # fragments and off-origin redirect tricks.
@@ -41,10 +40,8 @@ def _redirect_uri():
         if not parts.hostname or parts.username or parts.password or parts.path not in ("", "/") or parts.query or parts.fragment:
             raise HTTPException(503, "Web 外部地址格式无效（只允许主机名/IP和可选端口）")
         uri = scheme + "://" + parts.netloc + "/api/v1/auth/callback"
-    elif old_uri:
-        uri = old_uri
     else:
-        raise HTTPException(503, "请先在 .env 设置 FEISHU_LOGIN_REDIRECT_URI，或在 Web 后台配置外部访问主机")
+        raise HTTPException(503, "请在 Web 后台配置外部访问主机")
     parts = urlsplit(uri)
     if (parts.scheme not in ("http", "https") or not parts.hostname
             or parts.path != "/api/v1/auth/callback" or parts.query or parts.fragment
