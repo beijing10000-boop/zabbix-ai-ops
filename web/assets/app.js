@@ -114,15 +114,25 @@ async function loadSettings(){
 }
 async function saveSettings(){const values={};for(const key of Object.keys(labels)){const el=document.getElementById('field-'+key);if(el&&el.value!==(settings[key]||''))values[key]=el.value}try{await api('/api/v1/settings',{method:'PUT',body:JSON.stringify({values})});document.getElementById('save-result').textContent='';toast('设置已保存');await loadSettings()}catch(e){document.getElementById('save-result').textContent='保存失败：'+e.message}}
 async function muteAlert(){const host_id=document.getElementById('mute-host').value.trim(),trigger_id=document.getElementById('mute-trigger').value.trim(),hours=Number(document.getElementById('mute-hours').value);const out=document.getElementById('mute-result');if(!/^\d+$/.test(host_id)||!/^\d+$/.test(trigger_id)){out.textContent='请先从告警卡片打开，或填写有效数字主机 ID、触发器 ID';return}if(!await confirmAction('确认只屏蔽此主机此触发器的飞书重复告警 '+hours+' 小时？Zabbix 监控与恢复消息不受影响。'))return;try{const r=await api('/api/v1/alert-mutes',{method:'POST',body:JSON.stringify({host_id,trigger_id,hours})});out.textContent='已设置屏蔽，到期自动恢复。结束时间：'+new Date(r.expires_at*1000).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai'})}catch(e){out.textContent='屏蔽失败：'+e.message}}
-async function unmuteAlert(){const host=document.getElementById('mute-host').value.trim(),trigger=document.getElementById('mute-trigger').value.trim(),out=document.getElementById('mute-result');if(!/^\d+$/.test(host)||!/^\d+$/.test(trigger)){out.textContent='请填写要解除的主机 ID 和触发器 ID';return}if(!confirm('确认立即恢复此类飞书告警通知？'))return;try{await api('/api/v1/alert-mutes/'+encodeURIComponent(host)+'/'+encodeURIComponent(trigger),{method:'DELETE'});out.textContent='已解除屏蔽，后续同类告警将正常发送'}catch(e){out.textContent='操作失败：'+e.message}}
+async function unmuteAlert(){const host=document.getElementById('mute-host').value.trim(),trigger=document.getElementById('mute-trigger').value.trim(),out=document.getElementById('mute-result');if(!/^\d+$/.test(host)||!/^\d+$/.test(trigger)){out.textContent='请填写要解除的主机 ID 和触发器 ID';return}if(!confirm('确认立即恢复此类飞书告警通知？'))return;try{await api('/api/v1/alert-mutes/'+encodeURIComponent(host)+'/'+encodeURIComponent(trigger),{method:'DELETE'});out.textContent='已解除屏蔽，后续同类告警将正常发送';toast('已解除屏蔽');await listMutes()}catch(e){out.textContent='操作失败：'+e.message}}
 async function listMutes(){const out=document.getElementById('mute-result');try{const rows=await api('/api/v1/alert-mutes');out.textContent=rows.length?'':'当前没有生效的屏蔽规则';const list=document.getElementById('mute-active-list');list.replaceChildren(...rows.map(x=>{const row=document.createElement('div');row.className='grouped-row';const remaining=Math.max(0,x.expires_at-Math.floor(Date.now()/1000));const hours=Math.floor(remaining/3600),mins=Math.floor(remaining%3600/60);const text=document.createElement('span');text.textContent='主机 '+x.host_id+' · 触发器 '+x.trigger_id+' · 还剩 '+hours+' 小时 '+mins+' 分';const action=document.createElement('button');action.className='text-danger';action.textContent='解除';action.addEventListener('click',()=>{document.getElementById('mute-host').value=x.host_id;document.getElementById('mute-trigger').value=x.trigger_id;unmuteAlert()});row.append(text,action);return row}))}catch(e){out.textContent=e.message}}
-function checkMuteLink(){const p=new URLSearchParams(location.search),host=p.get('mute_host'),trigger=p.get('mute_trigger');if(!host||!trigger)return;page('mutes');document.getElementById('mute-host').value=host;document.getElementById('mute-trigger').value=trigger;history.replaceState(null,'',location.pathname)}
+function checkMuteLink(){const p=new URLSearchParams(location.search),host=p.get('mute_host'),trigger=p.get('mute_trigger');if(!host||!trigger)return;page('mutes');document.getElementById('mute-host').value=host;document.getElementById('mute-trigger').value=trigger;history.replaceState(null,'',location.pathname);openNewMute()}
 async function refreshMetrics(){try{const m=await api('/api/v1/alert-stats');document.getElementById('metric-problems').textContent=m.problems;document.getElementById('metric-recoveries').textContent=m.recoveries;document.getElementById('metric-ai').textContent=m.ai_analyses;const q=await api('/api/v1/qa-stats');document.getElementById('metric-qa').textContent=q.total;document.getElementById('metric-qa-breakdown').textContent=`成功 ${q.success} · 失败 ${q.failed} · 待完成 ${q.pending+q.running}`}catch(e){console.warn('metric load failed')}}
 async function openQaMetric(){const panel=document.getElementById('qa-detail');Drawer(panel);const body=document.getElementById('qa-detail-body');body.replaceChildren();try{const rows=await api('/api/v1/qa-events?limit=100');const sources={feishu:'飞书',web:'Web'};const statuses={pending:'待处理',running:'分析中',success:'成功',failed:'失败'};for(const row of rows){const tr=document.createElement('tr');for(const value of [row.created_at,sources[row.source]||row.source,row.question,statuses[row.status]||row.status,row.completed_at||'—',row.error_type||'—']){const td=document.createElement('td');td.textContent=value??'';tr.append(td)}body.append(tr)}if(!rows.length){const tr=document.createElement('tr');const td=document.createElement('td');td.colSpan=6;td.textContent='暂无问答记录';tr.append(td);body.append(tr)}}catch(e){body.textContent='读取失败：'+e.message}panel.scrollIntoView({behavior:'smooth',block:'start'})}
 async function openMetric(kind){const names={problems:'接收告警明细',recoveries:'接收恢复明细',ai:'自动 AI 分析明细'};document.getElementById('metric-detail-title').textContent=names[kind];Drawer(document.getElementById('metric-detail'));const body=document.getElementById('metric-detail-body');body.replaceChildren();try{const rows=await api('/api/v1/alert-events?kind='+encodeURIComponent(kind)+'&limit=100');for(const row of rows){const tr=document.createElement('tr');for(const field of ['received_at','event_id','host_name','event_name','severity','notify_status','ai_status']){const td=document.createElement('td');if(field==='severity'){const levels=['未分类','信息','警告','一般严重','严重','灾难'];const n=Number(row[field]);td.textContent=Number.isInteger(n)&&n>=0&&n<=5?levels[n]:'未知';td.classList.add('severity-'+(Number.isInteger(n)&&n>=0&&n<=5?n:'unknown'))}else{td.textContent=row[field]??''}tr.append(td)}body.append(tr)}if(!rows.length){const tr=document.createElement('tr');const td=document.createElement('td');td.colSpan=7;td.textContent='暂无记录';tr.append(td);body.append(tr)}}catch(e){const tr=document.createElement('tr');const td=document.createElement('td');td.colSpan=7;td.textContent='读取失败：'+e.message;tr.append(td);body.append(tr)}document.getElementById('metric-detail').scrollIntoView({behavior:'smooth',block:'nearest'})}
-async function refreshStatus(){refreshMetrics();const out=document.getElementById('status-output'),debug=document.getElementById('debug-output');try{const r=await api('/api/v1/status');renderServiceHealth(r);document.getElementById('db-state').textContent=r.database==='ok'?'正常':'异常';document.getElementById('redis-state').textContent=r.redis==='ok'?'正常':'异常';document.getElementById('alert-count').textContent=r.queues?.['ai-alerts']??0;document.getElementById('qa-count').textContent=r.queues?.['ai-questions']??0;out.textContent=JSON.stringify(r,null,2);debug.textContent=out.textContent}catch(e){out.textContent=e.message;debug.textContent=e.message}}
-async function testMcp(){const out=document.getElementById('debug-output');out.textContent='正在检查 MCP...';try{out.textContent=JSON.stringify(await api('/api/v1/test/mcp',{method:'POST'}),null,2)}catch(e){out.textContent='测试失败：'+e.message}}
-async function testAi(){const out=document.getElementById('debug-output');out.textContent='正在调用 AI 模型...';try{out.textContent=JSON.stringify(await api('/api/v1/test/ai',{method:'POST'}),null,2)}catch(e){out.textContent='测试失败：'+e.message}}
+async function refreshStatus(){refreshMetrics();const out=document.getElementById('status-output'),debug=document.getElementById('debug-output');try{const r=await api('/api/v1/status');renderServiceHealth(r);updateDebugRow('redis',r.redis==='ok',0,r.redis);document.getElementById('db-state').textContent=r.database==='ok'?'正常':'异常';document.getElementById('redis-state').textContent=r.redis==='ok'?'正常':'异常';document.getElementById('alert-count').textContent=r.queues?.['ai-alerts']??0;document.getElementById('qa-count').textContent=r.queues?.['ai-questions']??0;out.textContent=JSON.stringify(r,null,2);debug.textContent=out.textContent}catch(e){out.textContent=e.message;debug.textContent=e.message}}
+async function testMcp(){
+ const out=document.getElementById('debug-output'),started=performance.now();
+ out.textContent='正在检查 MCP...';
+ try{const r=await api('/api/v1/test/mcp',{method:'POST'});out.textContent=JSON.stringify(r,null,2);updateDebugRow('mcp',true,(performance.now()-started)/1000)}
+ catch(e){out.textContent='测试失败：'+e.message;updateDebugRow('mcp',false,(performance.now()-started)/1000)}
+}
+async function testAi(){
+ const out=document.getElementById('debug-output'),started=performance.now();
+ out.textContent='正在调用 AI 模型...';
+ try{const r=await api('/api/v1/test/ai',{method:'POST'});out.textContent=JSON.stringify(r,null,2);updateDebugRow('ai',true,(performance.now()-started)/1000)}
+ catch(e){out.textContent='测试失败：'+e.message;updateDebugRow('ai',false,(performance.now()-started)/1000)}
+}
 async function askAi(){
   const btn=document.getElementById('ask-btn'),input=document.getElementById('ask-question');
   const question=input.value.trim();if(!question)return;
@@ -137,7 +147,7 @@ async function askAi(){
   }catch(error){reply.textContent='问答失败：'+error.message}
   finally{btn.disabled=false;thread.scrollTop=thread.scrollHeight;input.focus()}
 }
-async function loadLogs(){try{const r=await api('/api/v1/logs');document.getElementById('queue-info').textContent=JSON.stringify(r.queues);document.getElementById('failed-jobs').textContent=JSON.stringify(r.failed_jobs,null,2);document.getElementById('log-body').replaceChildren(...r.audit.map(row=>{const tr=document.createElement('tr');[row.time,row.action,row.key].forEach(v=>{const td=document.createElement('td');td.textContent=v||'';tr.append(td)});return tr}))}catch(e){document.getElementById('failed-jobs').textContent='读取失败：'+e.message}}
+async function loadLogs(){try{const r=await api('/api/v1/logs');renderAuditGroups(r.audit||[]);document.getElementById('queue-info').textContent=JSON.stringify(r.queues);document.getElementById('failed-jobs').textContent=JSON.stringify(r.failed_jobs,null,2);document.getElementById('log-body').replaceChildren(...r.audit.map(row=>{const tr=document.createElement('tr');[row.time,row.action,row.key].forEach(v=>{const td=document.createElement('td');td.textContent=v||'';tr.append(td)});return tr}))}catch(e){document.getElementById('failed-jobs').textContent='读取失败：'+e.message}}
 bootstrap();
 
 /* External script event delegation: no inline handlers or JavaScript URLs. */
@@ -147,6 +157,7 @@ const actionHandlers={
   metric:el=>openMetric(el.dataset.arg),
   'qa-metric':()=>openQaMetric(),
   'new-mute':()=>openNewMute(),
+  'log-tab':el=>showLogTab(el.dataset.arg),
   close:el=>{document.getElementById(el.dataset.arg).classList.remove('show')},
   refresh:()=>refreshStatus(),mute:()=>muteAlert(),'list-mutes':()=>listMutes(),
   unmute:()=>unmuteAlert(),save:()=>saveSettings(),'load-settings':()=>loadSettings(),
@@ -195,8 +206,47 @@ function confirmAction(message,{danger=false,confirmText='确认'}={}){
  });
 }
 function openNewMute(){
- const panel=document.getElementById('mute-host');panel.focus();
- document.getElementById('mute-result').textContent='输入主机与触发器 ID，选择时长并确认屏蔽。';
+ const overlay=document.createElement('div');overlay.className='sheet-overlay';
+ const dialog=document.createElement('div');dialog.className='sheet';dialog.setAttribute('role','dialog');
+ dialog.setAttribute('aria-modal','true');dialog.setAttribute('aria-label','新建告警屏蔽');
+ const title=document.createElement('h2');title.textContent='新建告警屏蔽';
+ function field(label,placeholder,value){
+  const wrap=document.createElement('div');wrap.className='sheet-field';
+  const l=document.createElement('label');l.textContent=label;
+  const input=document.createElement('input');input.type='text';input.placeholder=placeholder;input.value=value||'';
+  wrap.append(l,input);return {wrap,input};
+ }
+ const host=field('主机 ID','数字主机 ID',document.getElementById('mute-host').value);
+ const trigger=field('触发器 ID','数字触发器 ID',document.getElementById('mute-trigger').value);
+ const duration=document.createElement('div');duration.className='segmented mute-durations';
+ let hours=1;
+ for(const [n,label] of [[1,'1小时'],[4,'4小时'],[24,'1天'],[72,'3天'],[168,'7天']]){
+  const b=document.createElement('button');b.type='button';b.textContent=label;b.classList.toggle('selected',n===hours);
+  b.addEventListener('click',()=>{hours=n;duration.querySelectorAll('button').forEach(x=>x.classList.toggle('selected',x===b))});
+  duration.append(b);
+ }
+ const desc=document.createElement('p');desc.className='sub';desc.textContent='屏蔽飞书同类告警，到期自动恢复。不会修改 Zabbix。';
+ const error=document.createElement('p');error.className='error-text';error.setAttribute('role','alert');
+ const actions=document.createElement('div');actions.className='sheet-actions';
+ const cancel=document.createElement('button');cancel.type='button';cancel.className='secondary';cancel.textContent='取消';
+ const create=document.createElement('button');create.type='button';create.className='primary';create.textContent='创建屏蔽';
+ const close=()=>overlay.remove();
+ cancel.addEventListener('click',close);
+ create.addEventListener('click',async()=>{
+  const host_id=host.input.value.trim(),trigger_id=trigger.input.value.trim();
+  if(!/^\\d{1,20}$/.test(host_id)||!/^\\d{1,20}$/.test(trigger_id)){
+    error.textContent='请填写 1–20 位数字的主机 ID 和触发器 ID';return;
+  }
+  create.disabled=true;
+  try{
+   await api('/api/v1/alert-mutes',{method:'POST',body:JSON.stringify({host_id,trigger_id,hours})});
+   close();toast('告警屏蔽已创建');await listMutes();
+  }catch(e){error.textContent=e.message}finally{create.disabled=false}
+ });
+ overlay.addEventListener('click',e=>{if(e.target===overlay)close()});
+ overlay.addEventListener('keydown',e=>{if(e.key==='Escape')close()});
+ actions.append(cancel,create);dialog.append(title,desc,host.wrap,trigger.wrap,duration,error,actions);
+ overlay.append(dialog);document.body.append(overlay);host.input.focus();
 }
 document.getElementById('ask-question').addEventListener('keydown',event=>{
  if(event.key==='Enter'&&!event.shiftKey&&!event.isComposing){event.preventDefault();askAi()}
@@ -238,3 +288,39 @@ document.addEventListener('keydown',event=>{
   if(drawer)drawer.classList.remove('show');
  }
 });
+
+function showLogTab(kind){
+ document.getElementById('log-audit-panel').hidden=kind!=='audit';
+ document.getElementById('log-failed-panel').hidden=kind!=='failed';
+ document.querySelectorAll('[data-action="log-tab"]').forEach(button=>{
+  const active=button.dataset.arg===kind;
+  button.classList.toggle('selected',active);button.setAttribute('aria-selected',String(active));
+ });
+}
+function renderAuditGroups(rows){
+ const root=document.getElementById('log-groups');if(!root)return;
+ const byDate=new Map();
+ for(const r of rows){
+  const date=(r.time||'未知日期').slice(0,10);
+  if(!byDate.has(date))byDate.set(date,[]);
+  byDate.get(date).push(r);
+ }
+ root.replaceChildren();
+ if(!rows.length){const empty=document.createElement('p');empty.className='sub';empty.textContent='暂无审计记录';root.append(empty);return}
+ for(const [date,items] of byDate){
+  const heading=document.createElement('h3');heading.className='grouped-heading';heading.textContent=date;
+  const list=document.createElement('div');list.className='grouped-list';
+  for(const item of items){
+   const row=document.createElement('div');row.className='grouped-row';
+   const name=document.createElement('span');name.textContent=item.action+' · '+(item.key||'');
+   const time=document.createElement('span');time.className='sub';time.textContent=(item.time||'').slice(11);
+   row.append(name,time);list.append(row);
+  }
+  root.append(heading,list);
+ }
+}
+function updateDebugRow(kind,ok,elapsed,detail){
+ const box=document.getElementById('debug-'+kind+'-result');if(!box)return;
+ box.replaceChildren(statusDot(ok?'green':'red', (ok?'成功':'失败')+' · '+elapsed.toFixed(1)+'s'));
+ if(detail)document.getElementById('debug-output').textContent=detail;
+}

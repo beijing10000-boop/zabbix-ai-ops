@@ -140,3 +140,10 @@ input,textarea,select{background:var(--bg-elevated);color:var(--label);border-co
 .primary{background:var(--blue-accessible)}
 @media(prefers-color-scheme:dark){:root{--blue-accessible:#0A84FF}.primary{color:#000000}}
 @media(max-width:899px){.drawer{border-radius:0;padding:16px 12px 90px}}
+
+.mute-form,.mute-actions{display:none}.mute-durations{margin:18px 0;justify-content:space-between}.mute-durations button{flex:1;min-width:52px}.sheet-field{margin-top:15px}.sheet-field label{display:block;margin-bottom:8px;font-size:13px;color:var(--label-2)}.sheet-field input{min-height:44px}
+.error-text{color:var(--red);font-size:13px;min-height:18px;margin:8px 0}
+.debug-group{margin:0}.debug-group .grouped-row>span:first-child{font-weight:600;font-size:15px}.debug-result{margin-left:auto;color:var(--label-2);font-size:13px}
+.debug-group button{min-width:58px}.hidden{display:none!important}
+[hidden]{display:none!important}
+@media(max-width:899px){.debug-group .grouped-row{padding:10px 8px;gap:5px}.debug-result{font-size:11px}.debug-group button{min-width:52px}}

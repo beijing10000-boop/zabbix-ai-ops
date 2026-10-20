@@ -26,14 +26,29 @@
 <div class="actions"><button class="secondary" data-action="page" data-arg="debug">打开连接调试</button></div>
 <div class="save-toolbar" id="save-toolbar" hidden><span>有未保存的修改</span><div><button class="secondary" data-action="load-settings">还原</button><button class="primary" data-action="save">保存</button></div></div>
 <div id="save-result" class="sub" aria-live="polite"></div></div></section>
-<section class="page" id="mutes"><div class="page-lead"><h2>告警屏蔽</h2><p class="sub">管理 Zabbix 告警的飞书通知屏蔽规则。</p></div><div class="panel inline-9"><div class="section-heading"><h2>当前告警屏蔽</h2><button class="primary" data-action="new-mute" aria-label="新建屏蔽">＋ 新建</button></div><p class="sub">仅屏蔽 93 发往飞书的重复问题通知，不修改 Zabbix，不影响恢复消息；按主机 ID + 触发器 ID 生效，到期自动失效。</p><div class="form-grid"><div><label for="mute-host">主机 ID</label><input id="mute-host" placeholder="点击飞书卡片按钮后自动填写"></div><div><label for="mute-trigger">触发器 ID</label><input id="mute-trigger" placeholder="点击飞书卡片按钮后自动填写"></div><div><label for="mute-hours">屏蔽时长</label><select id="mute-hours"><option value="1">1 小时</option><option value="4">4 小时</option><option value="24">24 小时</option><option value="72">3 天</option><option value="168">7 天</option></select></div></div><div class="actions mute-actions"><button class="primary" data-action="mute">确认屏蔽</button><button class="secondary" data-action="list-mutes">查看当前屏蔽</button><button class="secondary danger" data-action="unmute">提前解除屏蔽</button></div><div id="mute-active-list" class="grouped-list" aria-live="polite"></div><div id="mute-result" class="result">从飞书告警卡片点击「暂不接收同类告警」即可自动带入主机与触发器 ID。</div></div></section>
-<section class="page" id="debug"><div class="panel"><h2>连接调试中心</h2><p class="sub">验证 Redis、MCP 工具发现与 AI API 连通性；不会修改 Zabbix。</p><div class="actions"><button class="secondary" data-action="refresh">检查服务</button><button class="secondary" data-action="test-mcp">测试 MCP</button><button class="primary" data-action="test-ai">测试 AI 模型</button></div><pre id="debug-output">请选择一个测试项目。</pre></div></section>
+<section class="page" id="mutes"><div class="page-lead"><h2>告警屏蔽</h2><p class="sub">管理 Zabbix 告警的飞书通知屏蔽规则。</p></div><div class="panel inline-9"><div class="section-heading"><h2>当前告警屏蔽</h2><button class="primary" data-action="new-mute" aria-label="新建屏蔽">＋ 新建</button></div><p class="sub">仅屏蔽本系统发往飞书的重复问题通知，不修改 Zabbix，不影响恢复消息；按主机 ID + 触发器 ID 生效，到期自动失效。</p><div class="form-grid mute-form"><div><label for="mute-host">主机 ID</label><input id="mute-host" placeholder="点击飞书卡片按钮后自动填写"></div><div><label for="mute-trigger">触发器 ID</label><input id="mute-trigger" placeholder="点击飞书卡片按钮后自动填写"></div><div><label for="mute-hours">屏蔽时长</label><select id="mute-hours"><option value="1">1 小时</option><option value="4">4 小时</option><option value="24">24 小时</option><option value="72">3 天</option><option value="168">7 天</option></select></div></div><div class="actions mute-actions"><button class="primary" data-action="mute">确认屏蔽</button><button class="secondary" data-action="list-mutes">查看当前屏蔽</button><button class="secondary danger" data-action="unmute">提前解除屏蔽</button></div><div id="mute-active-list" class="grouped-list" aria-live="polite"></div><div id="mute-result" class="result">从飞书告警卡片点击「暂不接收同类告警」即可自动带入主机与触发器 ID。</div></div></section>
+<section class="page" id="debug"><div class="page-lead"><h2>连接调试</h2><p class="sub">只读检查后端、MCP 和模型连通性。</p></div>
+<div class="panel"><div class="grouped-list debug-group">
+<div class="grouped-row"><span>Redis</span><span id="debug-redis-result" class="debug-result">未测试</span><button class="secondary" data-action="refresh">测试</button></div>
+<div class="grouped-row"><span>Zabbix MCP</span><span id="debug-mcp-result" class="debug-result">未测试</span><button class="secondary" data-action="test-mcp">测试</button></div>
+<div class="grouped-row"><span>AI 模型</span><span id="debug-ai-result" class="debug-result">未测试</span><button class="secondary" data-action="test-ai">测试</button></div>
+</div><details class="health-details"><summary>显示详细信息</summary><pre id="debug-output">选择服务右侧的测试按钮。</pre></details>
+</div></section>
 <section class="page chat-page" id="ask">
 <div class="chat-header"><h2>AI 运维助手</h2><p class="sub">通过 Zabbix MCP 只读查询 · 对话仅保存在当前页面</p></div>
 <div id="chat-thread" class="chat-thread" role="log" aria-live="polite"><div class="chat-message ai">你好，我可以帮你查询 Zabbix 告警并提供排障建议。</div></div>
 <div class="chat-compose"><label for="ask-question" class="visually-hidden">向 AI 运维助手发送消息</label><textarea id="ask-question" placeholder="输入问题…" maxlength="3000" rows="1"></textarea><button class="primary" id="ask-btn" data-action="ask" aria-label="发送消息">↑</button></div>
 <div id="ask-answer" class="visually-hidden" aria-live="polite"></div>
 </section>
-<section class="page" id="logs"><div class="panel"><h2>日志与操作审计</h2><p class="sub">只显示配置操作记录和失败任务 ID，不展示可能携带密钥的原始异常堆栈。</p><button class="secondary" data-action="logs">刷新日志</button><div id="queue-info" class="sub"></div><table class="table"><thead><tr><th>时间</th><th>操作</th><th>项目</th></tr></thead><tbody id="log-body"></tbody></table><h2 class="inline-10">失败任务</h2><pre id="failed-jobs">暂无数据</pre></div></section>
+<section class="page" id="logs"><div class="page-lead"><h2>运行日志</h2><p class="sub">操作审计与失败任务。不会暴露敏感日志。</p></div>
+<div class="panel">
+<div class="section-heading"><div class="segmented" role="tablist" aria-label="日志类别">
+<button type="button" class="selected" role="tab" aria-selected="true" data-action="log-tab" data-arg="audit">审计</button>
+<button type="button" role="tab" aria-selected="false" data-action="log-tab" data-arg="failed">失败任务</button>
+</div><button class="secondary" data-action="logs">刷新</button></div>
+<div id="log-audit-panel" role="tabpanel"><div id="log-groups"></div>
+<table class="table hidden" aria-hidden="true"><thead><tr><th>时间</th><th>操作</th><th>项目</th></tr></thead><tbody id="log-body"></tbody></table></div>
+<div id="log-failed-panel" role="tabpanel" hidden><div id="queue-info" class="sub"></div><pre id="failed-jobs">暂无失败任务</pre></div>
+</div></section>
 </main></div>
 <script src="/assets/app.js" defer></script></body></html>
