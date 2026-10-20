@@ -3,6 +3,7 @@ x-app-env: &app-env
   DATA_DIR: /app/data
   REDIS_URL: redis://redis:6379/0
   APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:?set key}
+  FEISHU_ADMIN_OPEN_IDS: ${FEISHU_ADMIN_OPEN_IDS:-}
 services:
   redis:
     image: redis:7-alpine
