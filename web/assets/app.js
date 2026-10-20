@@ -2,11 +2,12 @@
 let csrf='',settings={},currentUser={};
 const title={dashboard:'总览仪表盘',config:'系统配置',debug:'连接调试',ask:'AI 诊断助手',logs:'运行日志',mutes:'告警屏蔽'};
 const configGroups=[
-  {name:'平台与访问',keys:['web_protocol','web_public_host']},
-  {name:'AI 模型与提示词',keys:['openai_base_url','openai_model','openai_api_key','ai_alert_prompt','ai_qa_prompt']},
-  {name:'Zabbix MCP',keys:['mcp_url','mcp_token',]},
-  {name:'飞书与告警',keys:['lark_app_id','lark_app_secret','allowed_chat_ids','feishu_enabled','feishu_alert_chat_ids','zabbix_webhook_secret','ai_min_severity']},
-  {name:'兼容配置',keys:['min_severity','ai_prompt']}
+{name:'访问',keys:['web_protocol','web_public_host']},
+{name:'AI 模型',keys:['openai_base_url','openai_model','openai_api_key']},
+{name:'提示词',keys:['ai_alert_prompt','ai_qa_prompt','ai_prompt']},
+{name:'Zabbix MCP',keys:['mcp_url','mcp_token']},
+{name:'飞书',keys:['lark_app_id','lark_app_secret','allowed_chat_ids','feishu_enabled','feishu_alert_chat_ids']},
+{name:'告警策略',keys:['zabbix_webhook_secret','ai_min_severity','min_severity']}
 ];
 const labels={web_protocol:'Web 访问协议（http / https）',web_public_host:'Web 外部访问主机（例：zabbix.example.internal:8088）',openai_base_url:'AI API Base URL',openai_model:'AI 模型',openai_api_key:'AI API Key',mcp_url:'Zabbix MCP URL',mcp_token:'只读 MCP Token',lark_app_id:'飞书 App ID',lark_app_secret:'飞书 App Secret',allowed_chat_ids:'允许群聊 ID',feishu_enabled:'飞书通知开关（true/false）',feishu_alert_chat_ids:'企业应用告警群 Chat ID（逗号分隔；留空沿用允许群聊 ID）',zabbix_webhook_secret:'Zabbix Webhook 密钥',min_severity:'旧版最低告警等级（不再过滤通知）',ai_min_severity:'AI 分析最低级别（0–5，默认4=严重）',ai_alert_prompt:'告警分析提示词',ai_qa_prompt:'主动问答提示词',ai_prompt:'旧版提示词（兼容）'};
 const secrets=new Set(['openai_api_key','mcp_token','lark_app_secret','zabbix_webhook_secret']);
@@ -14,7 +15,103 @@ async function api(path,options={}){const response=await fetch(path,{credentials
 function page(id){document.querySelectorAll('.page').forEach(el=>el.classList.toggle('active',el.id===id));document.querySelectorAll('.nav button').forEach(el=>el.classList.toggle('active',el.dataset.page===id));document.getElementById('pagetitle').textContent=title[id];if(id==='config')loadSettings();if(id==='dashboard')refreshStatus();if(id==='logs')loadLogs();if(id==='mutes')listMutes()}
 async function bootstrap(){try{currentUser=await api('/api/v1/auth/me');csrf=currentUser.csrf;document.getElementById('login').style.display='none';document.getElementById('app').style.display='block';document.getElementById('username').textContent=currentUser.name;document.getElementById('avatar').textContent=(currentUser.name||'A').slice(0,1);refreshStatus();checkMuteLink();fetch('/healthz',{cache:'no-store'}).then(r=>r.json()).then(v=>{document.getElementById('app-version').textContent='版本 v'+(v.version||'未知')}).catch(()=>{document.getElementById('app-version').textContent='版本未知'})}catch(e){document.getElementById('login-error').textContent='请点击飞书账号登录。如首次配置，确认回调地址和管理员白名单。'}}
 async function logout(){try{await api('/api/v1/auth/logout',{method:'POST'})}catch(e){}location.href='/'}
-async function loadSettings(){try{settings=await api('/api/v1/settings');document.getElementById('fields').replaceChildren(...configGroups.flatMap(group=>{const heading=document.createElement('div');heading.className='ops-section-title';heading.textContent=group.name;return [heading,...group.keys.map(key=>{const label=labels[key];const wrap=document.createElement('div');if(['ai_alert_prompt','ai_qa_prompt','ai_prompt'].includes(key))wrap.className='span2';const l=document.createElement('label');l.textContent=label;const input=document.createElement(['web_protocol','feishu_enabled'].includes(key)?'select':(['ai_alert_prompt','ai_qa_prompt','ai_prompt'].includes(key)?'textarea':'input'));if(['web_protocol','feishu_alert_mode','feishu_enabled'].includes(key)){const choices=key==='web_protocol'?['http','https']:['false','true'];for(const choice of choices){const opt=document.createElement('option');opt.value=choice;opt.textContent=choice;input.append(opt)}}input.id='field-'+key;if(secrets.has(key))input.type='password';input.value=settings[key]||'';wrap.append(l,input);return wrap})]}))}catch(e){document.getElementById('save-result').textContent=e.message}}
+function markSettingsDirty(){
+ const dirty=Object.keys(labels).some(key=>{
+  const el=document.getElementById('field-'+key);
+  return el && el.value!==(settings[key]||'');
+ });
+ document.getElementById('save-toolbar').hidden=!dirty;
+}
+function makeGroupedRow(key){
+ const row=document.createElement('div');row.className='setting-row';
+ const label=document.createElement('label');label.textContent=labels[key];label.htmlFor='field-'+key;
+ const type=key==='feishu_enabled'?'toggle':['web_protocol','ai_min_severity'].includes(key)?'segmented':
+ secrets.has(key)?'secret':['ai_alert_prompt','ai_qa_prompt','ai_prompt'].includes(key)?'prompt':'input';
+ if(['toggle','segmented','secret','prompt'].includes(type)){
+  const state=document.createElement('input');state.type='hidden';state.id='field-'+key;
+  state.value=settings[key]||'';
+  let control;
+  if(type==='toggle')control=Toggle(state);
+  if(type==='segmented')control=Segmented(state,key==='web_protocol'?
+   [['http','HTTP'],['https','HTTPS']]:
+   [['0','未分类'],['1','信息'],['2','警告'],['3','一般'],['4','严重'],['5','灾难']]);
+  if(type==='secret'||type==='prompt'){
+   control=document.createElement('button');control.className='setting-action';control.type='button';
+   control.textContent=type==='secret'?(state.value?'已设置 · 修改':'未设置 · 修改'):'编辑 ›';
+   control.addEventListener('click',()=>editSettingValue(key,state,type,control));
+  }
+  row.append(label,state,control);
+ } else {
+  const field=document.createElement('input');field.id='field-'+key;
+  field.type='text';field.autocomplete='off';field.value=settings[key]||'';
+  field.addEventListener('input',markSettingsDirty);
+  row.append(label,field);
+ }
+ return row;
+}
+function GroupedList(group){
+ const fragment=document.createDocumentFragment();
+ const heading=document.createElement('h3');heading.className='grouped-heading';heading.textContent=group.name;
+ const list=document.createElement('div');list.className='settings-group';
+ for(const key of group.keys)list.append(makeGroupedRow(key));
+ fragment.append(heading,list);return fragment;
+}
+function Toggle(state){
+ const button=document.createElement('button');button.type='button';button.className='toggle';
+ button.setAttribute('role','switch');button.setAttribute('aria-label',labels[state.id.slice(6)]);
+ const render=()=>{const active=state.value==='true';button.classList.toggle('on',active);button.setAttribute('aria-checked',String(active))};
+ button.addEventListener('click',()=>{state.value=state.value==='true'?'false':'true';render();markSettingsDirty()});
+ render();return button;
+}
+function Segmented(state,choices){
+ const strip=document.createElement('div');strip.className='segmented';strip.setAttribute('role','group');
+ strip.setAttribute('aria-label',labels[state.id.slice(6)]);
+ for(const [value,label] of choices){
+  const button=document.createElement('button');button.type='button';button.textContent=label;button.dataset.value=value;
+  button.setAttribute('aria-pressed',String(state.value===value));
+  button.classList.toggle('selected',state.value===value);
+  button.addEventListener('click',()=>{
+   state.value=value;
+   strip.querySelectorAll('button').forEach(el=>{
+     el.classList.toggle('selected',el.dataset.value===value);
+     el.setAttribute('aria-pressed',String(el.dataset.value===value));
+   });
+   markSettingsDirty();
+  });
+  strip.append(button);
+ }
+ return strip;
+}
+function editSettingValue(key,state,type,trigger){
+ const overlay=document.createElement('div');overlay.className='sheet-overlay';
+ const dialog=document.createElement('div');dialog.className='sheet';dialog.setAttribute('role','dialog');
+ dialog.setAttribute('aria-modal','true');dialog.setAttribute('aria-label',labels[key]);
+ const heading=document.createElement('h2');heading.textContent=labels[key];
+ const editor=document.createElement(type==='prompt'?'textarea':'input');
+ editor.className='sheet-editor';editor.value=state.value==='********'?'':state.value;
+ if(type==='secret'){editor.type='password';editor.autocomplete='new-password';editor.placeholder='输入新密钥'}
+ else{editor.rows=10;editor.placeholder='输入自定义提示词'}
+ const actions=document.createElement('div');actions.className='sheet-actions';
+ const cancel=document.createElement('button');cancel.type='button';cancel.className='secondary';cancel.textContent='取消';
+ const save=document.createElement('button');save.type='button';save.className='primary';save.textContent='确定';
+ const done=()=>{
+  state.value=editor.value;
+  if(type==='secret')trigger.textContent=state.value?'已设置 · 修改':'未设置 · 修改';
+  overlay.remove();trigger.focus();markSettingsDirty();
+ };
+ cancel.addEventListener('click',()=>{overlay.remove();trigger.focus()});
+ save.addEventListener('click',done);
+ overlay.addEventListener('click',event=>{if(event.target===overlay)cancel.click()});
+ overlay.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();cancel.click()}});
+ actions.append(cancel,save);dialog.append(heading,editor,actions);overlay.append(dialog);document.body.append(overlay);editor.focus();
+}
+async function loadSettings(){
+ try{
+  settings=await api('/api/v1/settings');
+  const fields=document.getElementById('fields');fields.replaceChildren(...configGroups.map(GroupedList));
+  document.getElementById('save-toolbar').hidden=true;
+ }catch(error){toast('配置读取失败：'+error.message)}
+}
 async function saveSettings(){const values={};for(const key of Object.keys(labels)){const el=document.getElementById('field-'+key);if(el&&el.value!==(settings[key]||''))values[key]=el.value}try{await api('/api/v1/settings',{method:'PUT',body:JSON.stringify({values})});document.getElementById('save-result').textContent='';toast('设置已保存');await loadSettings()}catch(e){document.getElementById('save-result').textContent='保存失败：'+e.message}}
 async function muteAlert(){const host_id=document.getElementById('mute-host').value.trim(),trigger_id=document.getElementById('mute-trigger').value.trim(),hours=Number(document.getElementById('mute-hours').value);const out=document.getElementById('mute-result');if(!/^\d+$/.test(host_id)||!/^\d+$/.test(trigger_id)){out.textContent='请先从告警卡片打开，或填写有效数字主机 ID、触发器 ID';return}if(!await confirmAction('确认只屏蔽此主机此触发器的飞书重复告警 '+hours+' 小时？Zabbix 监控与恢复消息不受影响。'))return;try{const r=await api('/api/v1/alert-mutes',{method:'POST',body:JSON.stringify({host_id,trigger_id,hours})});out.textContent='已设置屏蔽，到期自动恢复。结束时间：'+new Date(r.expires_at*1000).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai'})}catch(e){out.textContent='屏蔽失败：'+e.message}}
 async function unmuteAlert(){const host=document.getElementById('mute-host').value.trim(),trigger=document.getElementById('mute-trigger').value.trim(),out=document.getElementById('mute-result');if(!/^\d+$/.test(host)||!/^\d+$/.test(trigger)){out.textContent='请填写要解除的主机 ID 和触发器 ID';return}if(!confirm('确认立即恢复此类飞书告警通知？'))return;try{await api('/api/v1/alert-mutes/'+encodeURIComponent(host)+'/'+encodeURIComponent(trigger),{method:'DELETE'});out.textContent='已解除屏蔽，后续同类告警将正常发送'}catch(e){out.textContent='操作失败：'+e.message}}

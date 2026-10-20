@@ -113,3 +113,20 @@ input,textarea,select{background:var(--bg-elevated);color:var(--label);border-co
 #service-list{margin:18px 0 0}.service-label{display:flex;align-items:center;gap:8px}.service-value{font-variant-numeric:tabular-nums;color:var(--label-2)}
 @media(max-width:899px){.side{position:fixed!important;inset:auto 0 0!important;height:72px!important}.nav button{gap:2px;flex-direction:column;align-items:center;justify-content:center;font-size:11px}.nav button svg{flex:none}.metrics-four{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:10px}}
 .top.scrolled{position:sticky;top:0;z-index:40;background:var(--sidebar);backdrop-filter:saturate(180%) blur(20px)}.top.scrolled h1{font-size:20px;line-height:26px}
+/* Grouped configuration + reusable controls */
+.settings-fields{display:block}.settings-group{background:var(--bg-elevated);border-radius:var(--radius-m);margin-bottom:20px;overflow:hidden}
+.grouped-heading{font-size:12px;line-height:16px;font-weight:600;color:var(--label-2);margin:25px 8px 8px;text-transform:none}
+.setting-row{display:flex;min-height:56px;align-items:center;justify-content:space-between;gap:16px;padding:8px 16px;position:relative}
+.setting-row:not(:last-child)::after{content:"";position:absolute;bottom:0;left:16px;right:0;border-bottom:1px solid var(--separator)}
+.setting-row label{font-size:15px;line-height:20px;font-weight:500;margin:0;flex:0 1 45%;color:var(--label)}
+.setting-row input[type=text]{width:min(56%,420px);min-height:38px;text-align:right;border:0;background:transparent;padding:5px;color:var(--label-2)}
+.setting-action{background:transparent;color:var(--label-2);white-space:nowrap;font-size:15px;font-weight:500;padding:5px}
+.toggle{display:block;flex:none;width:51px;min-width:51px;height:31px;min-height:31px;background:var(--fill);border-radius:999px;position:relative;transition:background var(--dur) var(--ease)}
+.toggle.on{background:var(--green)}.toggle::after{content:"";position:absolute;top:2px;left:2px;width:27px;height:27px;background:#FFFFFF;border-radius:50%;box-shadow:0 1px 2px rgba(0,0,0,.17);transition:transform var(--dur) var(--ease)}.toggle.on::after{transform:translateX(20px)}
+.segmented{background:var(--fill);padding:2px;display:flex;align-items:center;gap:2px;border-radius:9px;max-width:100%;overflow-x:auto}
+.segmented button{border-radius:7px;min-height:34px;min-width:44px;white-space:nowrap;padding:5px 8px;background:transparent;color:var(--label-2);font-size:12px;font-weight:600;transition:background var(--dur) var(--ease)}
+.segmented button.selected{color:var(--label);background:var(--bg-elevated);box-shadow:var(--shadow-card)}
+.sheet-editor{width:100%;margin-top:16px;min-height:48px}.sheet textarea.sheet-editor{min-height:220px;resize:vertical}
+.save-toolbar{position:sticky;bottom:14px;z-index:30;padding:14px 18px;display:flex;justify-content:space-between;align-items:center;gap:16px;border-radius:var(--radius-m);background:var(--bg-elevated);box-shadow:var(--shadow-card);border:1px solid var(--separator)}
+.save-toolbar[hidden]{display:none!important}.save-toolbar>div{display:flex;gap:8px}.save-toolbar>span{font-size:13px;color:var(--label-2)}
+@media(max-width:899px){.setting-row{gap:8px;padding:10px 12px}.setting-row label{font-size:13px;flex-basis:42%}.setting-row input[type=text]{font-size:13px;width:55%}.setting-row:has(.segmented){flex-direction:column;align-items:stretch}.setting-row .segmented{justify-content:flex-start}.segmented button{font-size:11px}.save-toolbar{bottom:82px}}
