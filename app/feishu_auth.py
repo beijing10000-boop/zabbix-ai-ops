@@ -64,7 +64,8 @@ def _credentials():
     return app_id, secret
 
 def _admins():
-    return {x.strip() for x in os.getenv("FEISHU_ADMIN_OPEN_IDS", "").split(",") if x.strip()}
+    ids = read_setting("feishu_admin_open_ids") or os.getenv("FEISHU_ADMIN_OPEN_IDS", "")
+    return {x.strip() for x in ids.split(",") if x.strip()}
 
 @app.get("/api/v1/auth/login")
 def feishu_login():
