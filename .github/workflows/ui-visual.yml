@@ -1,0 +1,20 @@
+name: UI visual regression
+on:
+  pull_request:
+  workflow_dispatch:
+jobs:
+  screenshots:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install playwright
+      - run: python -m playwright install --with-deps chromium
+      - run: python tests/ui_capture.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: apple-ui-screenshots
+          path: artifacts/ui/*.png
