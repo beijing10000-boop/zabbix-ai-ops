@@ -28,7 +28,7 @@ jobs:
       - run: npm install --no-save playwright@1.58.1
       - run: npx playwright install --with-deps chromium
       - run: |
-          APP_ENCRYPTION_KEY='test-ci-only-not-production' python -m uvicorn app.main:app --host 127.0.0.1 --port 8099 > /tmp/zabbix-ui.log 2>&1 &
+          DATA_DIR=$RUNNER_TEMP/zabbix-ui APP_ENCRYPTION_KEY='test-ci-only-not-production' python -m uvicorn app.main:app --host 127.0.0.1 --port 8099 > /tmp/zabbix-ui.log 2>&1 &
           for i in $(seq 1 40); do curl -fsS http://127.0.0.1:8099/healthz && break || sleep 1; done
           node tests/ui_visual.mjs
       - uses: actions/upload-artifact@v4
