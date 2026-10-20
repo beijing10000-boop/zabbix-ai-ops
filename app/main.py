@@ -50,6 +50,24 @@ def connection():
                            (legacy_admins,))
             db.execute("INSERT INTO settings(key,value,secret) VALUES ('feishu_admin_migration_done','1',0)")
 
+        # Import legacy redirect configuration only once, then use Web settings.
+        from urllib.parse import urlsplit
+        redirect_migrated = db.execute("SELECT 1 FROM settings WHERE key='redirect_migration_done'").fetchone()
+        if not redirect_migrated:
+            legacy_uri = os.getenv("FEISHU_LOGIN_REDIRECT_URI", "").strip()
+            legacy_host = os.getenv("WEB_PUBLIC_HOST", "").strip()
+            legacy_scheme = os.getenv("WEB_PROTOCOL", "").strip()
+            if legacy_uri:
+                parts = urlsplit(legacy_uri)
+                if (parts.scheme in ("http", "https") and parts.netloc and
+                        parts.path == "/api/v1/auth/callback" and not parts.query and
+                        not parts.fragment and not parts.username and not parts.password):
+                    legacy_host = legacy_host or parts.netloc
+                    legacy_scheme = legacy_scheme or parts.scheme
+            for key, val in (("web_public_host", legacy_host), ("web_protocol", legacy_scheme)):
+                if val and not db.execute("SELECT 1 FROM settings WHERE key=?", (key,)).fetchone():
+                    db.execute("INSERT INTO settings(key,value,secret) VALUES (?, ?, 0)", (key, val))
+            db.execute("INSERT INTO settings(key,value,secret) VALUES ('redirect_migration_done','1',0)")
         db.execute("CREATE TABLE IF NOT EXISTS audit (id INTEGER PRIMARY KEY AUTOINCREMENT, action TEXT, key TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP)")
         db.execute("""CREATE TABLE IF NOT EXISTS alert_events (id INTEGER PRIMARY KEY AUTOINCREMENT, event_id TEXT NOT NULL, event_value TEXT NOT NULL, event_name TEXT, host_name TEXT, severity INTEGER, received_at TEXT DEFAULT CURRENT_TIMESTAMP, notify_status TEXT DEFAULT 'queued', ai_status TEXT DEFAULT 'not_required', UNIQUE(event_id,event_value))""")
         db.execute("""CREATE TABLE IF NOT EXISTS ai_questions (
