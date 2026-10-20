@@ -220,6 +220,21 @@ async def handle_alert(event):
     severity = int(event.get("severity", "0"))
     recovery = str(event.get("event_value", "1")) == "0"
     info = initial_info(event)
+    if recovery:
+        # A recovery is only useful in Feishu if its original problem was
+        # actually delivered. Muted/failed/disabled/unknown problems are silent.
+        from .main import connection
+        with connection() as db:
+            previous = db.execute(
+                "SELECT notify_status FROM alert_events WHERE event_id=? AND event_value='1'",
+                (str(event.get("event_id","")),)
+            ).fetchone()
+        if not previous or previous[0] != "sent":
+            update_event(event, notify_status="suppressed_unpaired", ai_status="not_required")
+            log.info("FEISHU_RECOVERY_SUPPRESSED_UNPAIRED event_id=%s previous_status=%s",
+                     event.get("event_id"), previous[0] if previous else "missing")
+            return {"event_id":event["event_id"],"notified":False,
+                    "recovery_suppressed":True,"ai_skipped":True}
     if not recovery:
         from .main import connection
         import time
