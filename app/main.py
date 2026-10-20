@@ -5,67 +5,116 @@ import json
 import os
 import secrets
 import sqlite3
+import threading
+import time
+from functools import lru_cache
 from datetime import datetime, timezone
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from contextlib import contextmanager
 from pathlib import Path
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from cryptography.fernet import Fernet, InvalidToken
 from redis import Redis
 from rq import Queue
 
+SHANGHAI = ZoneInfo("Asia/Shanghai")
 DATA_DIR = Path(os.getenv("DATA_DIR", "/app/data"))
 DB = DATA_DIR / "app.sqlite3"
 MASTER_KEY = os.getenv("APP_ENCRYPTION_KEY", "")
 ADMIN_TOKEN = os.getenv("ADMIN_API_TOKEN", "")
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 app = FastAPI(title="Zabbix AI Ops", version="0.2.0")
+app.mount("/assets", StaticFiles(directory=str(Path(__file__).parent.parent / "web" / "assets")), name="assets")
+
+@app.middleware("http")
+async def security_headers(request, call_next):
+    response=await call_next(request)
+    response.headers["Content-Security-Policy"]="default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'"
+    return response
 SENSITIVE = {"openai_api_key", "mcp_token", "lark_app_secret", "zabbix_webhook_secret"}
 ALLOWED = SENSITIVE | {"openai_base_url", "openai_model", "mcp_url", "lark_app_id", "allowed_chat_ids", "min_severity", "ai_min_severity", "ai_prompt", "ai_alert_prompt", "ai_qa_prompt", "feishu_enabled", "web_protocol", "web_public_host", "feishu_alert_chat_ids"}
 DEFAULTS = {"min_severity": "3", "ai_min_severity": "4", "feishu_enabled": "false", "web_protocol": "http"}
 
+@lru_cache(maxsize=1)
 def cipher():
     if not MASTER_KEY:
         raise RuntimeError("APP_ENCRYPTION_KEY must be configured")
     return Fernet(MASTER_KEY.encode())
 
+_DB_READY=False
+_DB_LOCK=threading.Lock()
+_SETTINGS_SNAPSHOT={}
+_SETTINGS_AT=0.0
+_SETTINGS_LOCK=threading.Lock()
+
+def init_db():
+    global _DB_READY
+    if _DB_READY:
+        return
+    with _DB_LOCK:
+        if _DB_READY:
+            return
+        DATA_DIR.mkdir(parents=True,exist_ok=True)
+        with sqlite3.connect(DB,timeout=20) as db:
+            db.execute("PRAGMA journal_mode=WAL")
+            db.execute("PRAGMA journal_mode=WAL")
+            db.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, secret INTEGER NOT NULL)")
+            db.execute("CREATE TABLE IF NOT EXISTS audit (id INTEGER PRIMARY KEY AUTOINCREMENT, action TEXT, key TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP)")
+            db.execute("""CREATE TABLE IF NOT EXISTS alert_events (id INTEGER PRIMARY KEY AUTOINCREMENT, event_id TEXT NOT NULL, event_value TEXT NOT NULL, event_name TEXT, host_name TEXT, severity INTEGER, received_at TEXT DEFAULT CURRENT_TIMESTAMP, notify_status TEXT DEFAULT 'queued', ai_status TEXT DEFAULT 'not_required', UNIQUE(event_id,event_value))""")
+            db.execute("""CREATE TABLE IF NOT EXISTS ai_questions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                source TEXT NOT NULL,
+                request_id TEXT NOT NULL,
+                question TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                completed_at TEXT,
+                error_type TEXT,
+                UNIQUE(source,request_id)
+            )""")
+            db.execute("CREATE INDEX IF NOT EXISTS ix_ai_questions_created ON ai_questions(id DESC)")
+            db.execute("DELETE FROM settings WHERE key IN ('write_enabled','write_mcp_url','write_mcp_token','ai_approver_open_ids')")
+            db.execute("CREATE TABLE IF NOT EXISTS alert_mutes (host_id TEXT NOT NULL,trigger_id TEXT NOT NULL,expires_at INTEGER NOT NULL,created_at TEXT DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY(host_id,trigger_id))")
+            db.execute("CREATE TABLE IF NOT EXISTS oauth_states (state_hash TEXT PRIMARY KEY, expires INTEGER NOT NULL)")
+            db.execute("""CREATE TABLE IF NOT EXISTS admin_sessions (
+                token_hash TEXT PRIMARY KEY, open_id TEXT NOT NULL, name TEXT NOT NULL,
+                csrf TEXT NOT NULL, expires INTEGER NOT NULL)""")
+        _DB_READY=True
+
 @contextmanager
 def connection():
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    db = sqlite3.connect(DB, timeout=20)
+    init_db()
+    db=sqlite3.connect(DB,timeout=20)
     try:
-        db.execute("PRAGMA journal_mode=WAL")
-        db.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, secret INTEGER NOT NULL)")
-        db.execute("CREATE TABLE IF NOT EXISTS audit (id INTEGER PRIMARY KEY AUTOINCREMENT, action TEXT, key TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP)")
-        db.execute("""CREATE TABLE IF NOT EXISTS alert_events (id INTEGER PRIMARY KEY AUTOINCREMENT, event_id TEXT NOT NULL, event_value TEXT NOT NULL, event_name TEXT, host_name TEXT, severity INTEGER, received_at TEXT DEFAULT CURRENT_TIMESTAMP, notify_status TEXT DEFAULT 'queued', ai_status TEXT DEFAULT 'not_required', UNIQUE(event_id,event_value))""")
-        db.execute("""CREATE TABLE IF NOT EXISTS ai_questions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            source TEXT NOT NULL,
-            request_id TEXT NOT NULL,
-            question TEXT NOT NULL,
-            status TEXT NOT NULL DEFAULT 'pending',
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-            completed_at TEXT,
-            error_type TEXT,
-            UNIQUE(source,request_id)
-        )""")
-        db.execute("CREATE INDEX IF NOT EXISTS ix_ai_questions_created ON ai_questions(id DESC)")
-        db.execute("DELETE FROM settings WHERE key IN ('write_enabled','write_mcp_url','write_mcp_token','ai_approver_open_ids')")
-        db.execute("CREATE TABLE IF NOT EXISTS alert_mutes (host_id TEXT NOT NULL,trigger_id TEXT NOT NULL,expires_at INTEGER NOT NULL,created_at TEXT DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY(host_id,trigger_id))")
-        db.commit()
         yield db
         db.commit()
     finally:
         db.close()
 
+def invalidate_settings():
+    global _SETTINGS_AT
+    with _SETTINGS_LOCK:
+        _SETTINGS_AT=0.0
+
+def read_all_settings():
+    global _SETTINGS_AT,_SETTINGS_SNAPSHOT
+    now=time.monotonic()
+    with _SETTINGS_LOCK:
+        if _SETTINGS_AT and now-_SETTINGS_AT<15:
+            return dict(_SETTINGS_SNAPSHOT)
+        with connection() as db:
+            rows=db.execute("SELECT key,value,secret FROM settings").fetchall()
+        fresh={key:(cipher().decrypt(val.encode()).decode() if secret else val)
+               for key,val,secret in rows}
+        _SETTINGS_SNAPSHOT=fresh
+        _SETTINGS_AT=now
+        return dict(fresh)
+
 def read_setting(key):
-    with connection() as db:
-        row = db.execute("SELECT value, secret FROM settings WHERE key=?", (key,)).fetchone()
-    if not row:
-        return DEFAULTS.get(key, "")
-    return cipher().decrypt(row[0].encode()).decode() if row[1] else row[0]
+    return read_all_settings().get(key,DEFAULTS.get(key,""))
 
 def beijing_time(value):
     """Convert SQLite UTC CURRENT_TIMESTAMP fields for API presentation."""
@@ -75,8 +124,8 @@ def beijing_time(value):
         moment = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
         if moment.tzinfo is None:
             moment = moment.replace(tzinfo=timezone.utc)
-        return moment.astimezone(ZoneInfo("Asia/Shanghai")).strftime("%Y-%m-%d %H:%M:%S")
-    except (ValueError, TypeError):
+        return moment.astimezone(SHANGHAI).strftime("%Y-%m-%d %H:%M:%S")
+    except (ValueError, TypeError, ZoneInfoNotFoundError):
         return value
 
 
@@ -88,11 +137,11 @@ class SettingsUpdate(BaseModel):
     values: dict[str, str]
 
 class Alert(BaseModel):
-    event_id: str = Field(min_length=1, max_length=64)
+    event_id: str = Field(pattern=r"^\d{1,20}$")
     event_value: str = "1"
     event_source: str = "0"
     event_name: str = ""
-    severity: str = "0"
+    severity: str = Field(default="0", pattern=r"^[0-5]$")
     host_name: str = ""
     host_groups: str = ""
     event_date: str = ""
@@ -101,10 +150,10 @@ class Alert(BaseModel):
     recovery_time: str = ""
     recovery_value: str = ""
     event_duration: str = ""
-    recovery_id: str = ""
-    host_id: str = ""
+    recovery_id: str = Field(default="",pattern=r"^\d{0,20}$")
+    host_id: str = Field(default="",pattern=r"^\d{0,20}$")
     host_ip: str = ""
-    trigger_id: str = ""
+    trigger_id: str = Field(default="",pattern=r"^\d{0,20}$")
     subject: str = ""
     message: str = ""
 
@@ -137,6 +186,7 @@ def update_settings(body: SettingsUpdate):
             db.execute("INSERT INTO settings(key,value,secret) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, secret=excluded.secret",
                        (key, stored, int(key in SENSITIVE)))
             db.execute("INSERT INTO audit(action,key) VALUES(?,?)", ("settings_update", key))
+    invalidate_settings()
     return {"ok": True}
 
 def record_ai_question(source, request_id, question, status="pending", error_type=None):
@@ -237,7 +287,7 @@ def logs_overview():
     result={"failed_jobs":[], "queues":{}, "note":"详细容器日志请使用 docker compose logs 查看"}
     try:
         redis=Redis.from_url(REDIS_URL,socket_connect_timeout=3,socket_timeout=5)
-        for name in ("ai-alerts","ai-questions","ai-changes"):
+        for name in ("ai-alerts","ai-questions"):
             queue=Queue(name,connection=redis)
             result["queues"][name]={"queued":len(queue),
                                      "failed":len(FailedJobRegistry(name,connection=redis))}
@@ -339,9 +389,12 @@ async def test_ai_model():
 
 
 @app.post("/api/v1/ask", dependencies=[Depends(require_admin)])
-async def ask_web(body: AskRequest):
+async def ask_web(body: AskRequest, admin=Depends(require_admin)):
     """Use the same read-only MCP agent as Feishu; never expose write tools."""
     from .ai_agent import ask
+    from .rate_limit import allow
+    if not allow("web:"+admin["open_id"],5,60):
+        raise HTTPException(status_code=429,detail="请求过于频繁，请一分钟后重试")
     import uuid
     request_id = uuid.uuid4().hex
     record_ai_question("web", request_id, body.question, "running")

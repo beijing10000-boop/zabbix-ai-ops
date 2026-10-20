@@ -1,0 +1,28 @@
+name: UI preview and accessibility
+on:
+  pull_request:
+  push:
+    branches: [feat/ops-hardening-apple-ui-20261020]
+jobs:
+  screenshots:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install browser tests
+        run: |
+          npm install --no-save playwright @axe-core/playwright
+          npx playwright install --with-deps chromium
+      - name: Serve current web assets
+        run: python3 -m http.server 8765 --directory web >/tmp/ui-server.log 2>&1 &
+      - name: Capture screenshots and check accessibility
+        run: node .github/scripts/capture_ui.mjs
+      - name: Upload four previews
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: apple-ui-preview
+          path: screenshots/*.png
+          if-no-files-found: warn
