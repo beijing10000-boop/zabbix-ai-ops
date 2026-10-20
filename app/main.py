@@ -53,11 +53,11 @@ def init_db():
         db = sqlite3.connect(DB,timeout=20)
         try:
             db.execute("PRAGMA journal_mode=WAL")
-        db.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, secret INTEGER NOT NULL)")
-        db.execute("CREATE TABLE IF NOT EXISTS audit (id INTEGER PRIMARY KEY AUTOINCREMENT, action TEXT, key TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP)")
-        db.execute("""CREATE TABLE IF NOT EXISTS alert_events (id INTEGER PRIMARY KEY AUTOINCREMENT, event_id TEXT NOT NULL, event_value TEXT NOT NULL, event_name TEXT, host_name TEXT, severity INTEGER, received_at TEXT DEFAULT CURRENT_TIMESTAMP, notify_status TEXT DEFAULT 'queued', ai_status TEXT DEFAULT 'not_required', UNIQUE(event_id,event_value))""")
-        db.execute("""CREATE TABLE IF NOT EXISTS ai_questions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            db.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, secret INTEGER NOT NULL)")
+            db.execute("CREATE TABLE IF NOT EXISTS audit (id INTEGER PRIMARY KEY AUTOINCREMENT, action TEXT, key TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP)")
+            db.execute("""CREATE TABLE IF NOT EXISTS alert_events (id INTEGER PRIMARY KEY AUTOINCREMENT, event_id TEXT NOT NULL, event_value TEXT NOT NULL, event_name TEXT, host_name TEXT, severity INTEGER, received_at TEXT DEFAULT CURRENT_TIMESTAMP, notify_status TEXT DEFAULT 'queued', ai_status TEXT DEFAULT 'not_required', UNIQUE(event_id,event_value))""")
+            db.execute("""CREATE TABLE IF NOT EXISTS ai_questions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
             source TEXT NOT NULL,
             request_id TEXT NOT NULL,
             question TEXT NOT NULL,
@@ -67,8 +67,8 @@ def init_db():
             error_type TEXT,
             UNIQUE(source,request_id)
         )""")
-        db.execute("CREATE INDEX IF NOT EXISTS ix_ai_questions_created ON ai_questions(id DESC)")
-        db.execute("CREATE TABLE IF NOT EXISTS alert_mutes (host_id TEXT NOT NULL,trigger_id TEXT NOT NULL,expires_at INTEGER NOT NULL,created_at TEXT DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY(host_id,trigger_id))")
+            db.execute("CREATE INDEX IF NOT EXISTS ix_ai_questions_created ON ai_questions(id DESC)")
+            db.execute("CREATE TABLE IF NOT EXISTS alert_mutes (host_id TEXT NOT NULL,trigger_id TEXT NOT NULL,expires_at INTEGER NOT NULL,created_at TEXT DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY(host_id,trigger_id))")
 
             db.execute("CREATE TABLE IF NOT EXISTS oauth_states (state_hash TEXT PRIMARY KEY,expires INTEGER NOT NULL)")
             db.execute("""CREATE TABLE IF NOT EXISTS admin_sessions (
