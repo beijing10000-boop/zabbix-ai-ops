@@ -40,6 +40,13 @@ def on_message(data: P2ImMessageReceiveV1):
         log.info("FEISHU_DUPLICATE message_id=%s",msg_id)
         return
     sender_id = getattr(getattr(sender,"sender_id",None),"open_id",None)
+    from .rate_limit import allow_request
+    if not allow_request(redis,"feishu-user",sender_id or "anonymous",60,5):
+        log.warning("FEISHU_RATE_LIMIT scope=user message_id=%s",msg_id)
+        return
+    if not allow_request(redis,"feishu-group",message.chat_id,86400,300):
+        log.warning("FEISHU_RATE_LIMIT scope=group message_id=%s",msg_id)
+        return
     parent_id = getattr(message,"parent_id",None)
     root_id = getattr(message,"root_id",None)
     try:
