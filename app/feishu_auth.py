@@ -64,13 +64,13 @@ def _credentials():
     return app_id, secret
 
 def _admins():
-    ids = read_setting("feishu_admin_open_ids") or os.getenv("FEISHU_ADMIN_OPEN_IDS", "")
+    ids = read_setting("feishu_admin_open_ids")
     return {x.strip() for x in ids.split(",") if x.strip()}
 
 @app.get("/api/v1/auth/login")
 def feishu_login():
     if not _admins():
-        raise HTTPException(503, "尚未配置允许登录的管理员 FEISHU_ADMIN_OPEN_IDS")
+        raise HTTPException(503, "尚未配置 Web 管理员，请检查已迁移的飞书管理员名单")
     app_id, _ = _credentials()
     redirect = _redirect_uri()
     state = secrets.token_urlsafe(32)
