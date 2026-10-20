@@ -388,9 +388,15 @@ async def test_ai_model():
 
 
 @app.post("/api/v1/ask", dependencies=[Depends(require_admin)])
-async def ask_web(body: AskRequest):
+async def ask_web(body: AskRequest, request: Request):
     """Use the same read-only MCP agent as Feishu; never expose write tools."""
     from .ai_agent import ask
+    from .rate_limit import allow_request
+    from .feishu_auth import authenticate
+    identity=authenticate(request)
+    key=str(identity.get("open_id") if isinstance(identity,dict) else identity)
+    if not allow_request(Redis.from_url(REDIS_URL),"web-admin",key,60,5):
+        raise HTTPException(429,"每位管理员每分钟最多 5 次 AI 问答")
     import uuid
     request_id = uuid.uuid4().hex
     record_ai_question("web", request_id, body.question, "running")
