@@ -22,9 +22,9 @@ MASTER_KEY = os.getenv("APP_ENCRYPTION_KEY", "")
 ADMIN_TOKEN = os.getenv("ADMIN_API_TOKEN", "")
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 app = FastAPI(title="Zabbix AI Ops", version="0.2.0")
-SENSITIVE = {"openai_api_key", "mcp_token", "lark_app_secret", "zabbix_webhook_secret", "write_mcp_token"}
-ALLOWED = SENSITIVE | {"openai_base_url", "openai_model", "mcp_url", "lark_app_id", "allowed_chat_ids", "min_severity", "ai_min_severity", "ai_prompt", "ai_alert_prompt", "ai_qa_prompt", "feishu_enabled", "ai_approver_open_ids", "web_protocol", "web_public_host", "write_mcp_url", "write_enabled", "feishu_alert_chat_ids"}
-DEFAULTS = {"min_severity": "3", "ai_min_severity": "4", "feishu_enabled": "false", "web_protocol": "http", "write_enabled": "false"}
+SENSITIVE = {"openai_api_key", "mcp_token", "lark_app_secret", "zabbix_webhook_secret"}
+ALLOWED = SENSITIVE | {"openai_base_url", "openai_model", "mcp_url", "lark_app_id", "allowed_chat_ids", "min_severity", "ai_min_severity", "ai_prompt", "ai_alert_prompt", "ai_qa_prompt", "feishu_enabled", "web_protocol", "web_public_host", "feishu_alert_chat_ids"}
+DEFAULTS = {"min_severity": "3", "ai_min_severity": "4", "feishu_enabled": "false", "web_protocol": "http"}
 
 def cipher():
     if not MASTER_KEY:
@@ -52,6 +52,7 @@ def connection():
             UNIQUE(source,request_id)
         )""")
         db.execute("CREATE INDEX IF NOT EXISTS ix_ai_questions_created ON ai_questions(id DESC)")
+        db.execute("CREATE TABLE IF NOT EXISTS alert_mutes (host_id TEXT NOT NULL,trigger_id TEXT NOT NULL,expires_at INTEGER NOT NULL,created_at TEXT DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY(host_id,trigger_id))")
         db.commit()
         yield db
         db.commit()
@@ -127,14 +128,6 @@ def update_settings(body: SettingsUpdate):
         raise HTTPException(status_code=422, detail=f"invalid settings: {sorted(invalid)}")
     if any(not isinstance(v, str) or len(v) > 12000 for v in body.values.values()):
         raise HTTPException(status_code=422, detail="invalid value")
-    if "write_enabled" in body.values:
-        raise HTTPException(422, "请通过写入权限开关专用接口进行启用或关闭")
-    if "write_mcp_url" in body.values or "write_mcp_token" in body.values:
-        # Any change to write endpoint or credentials revokes prior capability approval.
-        # Admin must explicitly revalidate the target before another write.
-        with connection() as db:
-            db.execute("INSERT INTO settings(key,value,secret) VALUES ('write_enabled','false',0) ON CONFLICT(key) DO UPDATE SET value='false',secret=0")
-            db.execute("INSERT INTO audit(action,key) VALUES ('write_disabled','write_mcp_config_changed')")
     with connection() as db:
         for key, val in body.values.items():
             if key in SENSITIVE and val == "********":
@@ -145,74 +138,26 @@ def update_settings(body: SettingsUpdate):
             db.execute("INSERT INTO audit(action,key) VALUES(?,?)", ("settings_update", key))
     return {"ok": True}
 
-@app.post("/api/v1/write/disable", dependencies=[Depends(require_admin)])
-def disable_write():
+class MuteRequest(BaseModel):
+    host_id: str = Field(pattern=r"^[0-9]{1,20}$")
+    trigger_id: str = Field(pattern=r"^[0-9]{1,20}$")
+    hours: int = Field(ge=1,le=168)
+
+@app.post("/api/v1/alert-mutes", dependencies=[Depends(require_admin)])
+def create_mute(body: MuteRequest):
+    import time
+    expires=int(time.time())+body.hours*3600
     with connection() as db:
-        db.execute("INSERT INTO settings(key,value,secret) VALUES ('write_enabled','false',0) ON CONFLICT(key) DO UPDATE SET value='false',secret=0")
-        db.execute("INSERT INTO audit(action,key) VALUES ('write_disabled','event_acknowledge')")
-    return {"enabled": False}
+        db.execute("INSERT INTO alert_mutes(host_id,trigger_id,expires_at) VALUES(?,?,?) ON CONFLICT(host_id,trigger_id) DO UPDATE SET expires_at=excluded.expires_at,created_at=CURRENT_TIMESTAMP",(body.host_id,body.trigger_id,expires))
+        db.execute("INSERT INTO audit(action,key) VALUES (?,?)",("alert_mute",body.host_id+":"+body.trigger_id))
+    return {"ok":True,"expires_at":expires}
 
-@app.post("/api/v1/write/enable", dependencies=[Depends(require_admin)])
-async def enable_write():
-    """Validate independent write MCP tools before enabling acknowledgement."""
-    from mcp import ClientSession
-    from mcp.client.streamable_http import streamablehttp_client
-    url, token = read_setting("write_mcp_url"), read_setting("write_mcp_token")
-    if not url or not token:
-        raise HTTPException(422, "请先保存独立的写入 MCP URL 和 Token")
-    if url == read_setting("mcp_url") and token == read_setting("mcp_token"):
-        raise HTTPException(409, "写入 MCP 与只读 MCP 不允许使用相同的地址及令牌组合")
-    try:
-        async with streamablehttp_client(url, headers={"Authorization": "Bearer " + token}, timeout=10) as (rd, wr, _):
-            async with ClientSession(rd, wr) as session:
-                await session.initialize()
-                listed = await session.list_tools()
-        tool = next((t for t in listed.tools if t.name == "event_acknowledge"), None)
-        if not tool or not {"eventids","action"}.issubset((tool.inputSchema or {}).get("properties",{})):
-            raise HTTPException(409, "写入 MCP 未提供兼容的 event_acknowledge 工具")
-    except HTTPException:
-        raise
-    except Exception as exc:
-        raise HTTPException(502, "写入 MCP 工具检测失败：" + type(exc).__name__) from None
+@app.get("/api/v1/alert-mutes", dependencies=[Depends(require_admin)])
+def list_mutes():
+    import time
     with connection() as db:
-        db.execute("INSERT INTO settings(key,value,secret) VALUES ('write_enabled','true',0) ON CONFLICT(key) DO UPDATE SET value='true',secret=0")
-        db.execute("INSERT INTO audit(action,key) VALUES ('write_enabled','event_acknowledge')")
-    return {"enabled": True, "allowed_action": "event_acknowledge"}
-
-def record_ai_question(source, request_id, question, status="pending", error_type=None):
-    """Persist question lifecycle for dashboard metrics; no answer or credential storage."""
-    if source not in ("feishu", "web") or status not in ("pending", "running", "success", "failed"):
-        raise ValueError("invalid question metrics")
-    with connection() as db:
-        db.execute("""INSERT INTO ai_questions (source,request_id,question,status,error_type,completed_at)
-            VALUES (?,?,?,?,?,CASE WHEN ? IN ('success','failed') THEN CURRENT_TIMESTAMP ELSE NULL END)
-            ON CONFLICT(source,request_id) DO UPDATE SET
-            status=excluded.status, error_type=excluded.error_type,
-            completed_at=excluded.completed_at""",
-            (source, str(request_id)[:120], str(question)[:500], status, error_type, status))
-
-
-@app.get("/api/v1/qa-stats", dependencies=[Depends(require_admin)])
-def qa_stats():
-    with connection() as db:
-        rows = db.execute("SELECT status, COUNT(*) FROM ai_questions GROUP BY status").fetchall()
-    counts = dict(rows)
-    return {"total":sum(counts.values()), "pending":counts.get("pending",0),
-            "running":counts.get("running",0),"success":counts.get("success",0),
-            "failed":counts.get("failed",0)}
-
-
-@app.get("/api/v1/qa-events", dependencies=[Depends(require_admin)])
-def qa_events(limit: int = 100, offset: int = 0):
-    limit = min(max(limit,1),200)
-    offset = max(offset,0)
-    with connection() as db:
-        rows = db.execute("""SELECT source,request_id,question,status,created_at,completed_at,error_type
-            FROM ai_questions ORDER BY id DESC LIMIT ? OFFSET ?""", (limit,offset)).fetchall()
-    return [{"source":r[0],"request_id":r[1],"question":r[2],"status":r[3],
-             "created_at":beijing_time(r[4]),"completed_at":beijing_time(r[5]),
-             "error_type":r[6]} for r in rows]
-
+        rows=db.execute("SELECT host_id,trigger_id,created_at,expires_at FROM alert_mutes WHERE expires_at>? ORDER BY expires_at",(int(time.time()),)).fetchall()
+    return [{"host_id":r[0],"trigger_id":r[1],"created_at":beijing_time(r[2]),"expires_at":r[3]} for r in rows]
 
 @app.get("/api/v1/alert-stats", dependencies=[Depends(require_admin)])
 def alert_stats():
