@@ -17,7 +17,7 @@ def action_signature(host_id, trigger_id, hours):
 def handle_mute_action(value, operator_open_id):
     if not isinstance(value,dict) or value.get("op")!="mute_alert":
         return False,"不支持的操作"
-    ids = read_setting("feishu_admin_open_ids") or os.environ.get("FEISHU_ADMIN_OPEN_IDS", "")
+    ids = read_setting("feishu_admin_open_ids")
     admins={x.strip() for x in ids.split(",") if x.strip()}
     if not operator_open_id or operator_open_id not in admins:
         return False,"仅飞书管理员可以暂停告警通知"
