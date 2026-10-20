@@ -27,6 +27,15 @@ MASTER_KEY = os.getenv("APP_ENCRYPTION_KEY", "")
 ADMIN_TOKEN = os.getenv("ADMIN_API_TOKEN", "")
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 app = FastAPI(title="Zabbix AI Ops", version="0.2.0")
+
+@app.middleware("http")
+async def strict_content_security_policy(request, call_next):
+    response = await call_next(request)
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'"
+    )
+    return response
+
 SENSITIVE = {"openai_api_key", "mcp_token", "lark_app_secret", "zabbix_webhook_secret"}
 ALLOWED = SENSITIVE | {"openai_base_url", "openai_model", "mcp_url", "lark_app_id", "allowed_chat_ids", "min_severity", "ai_min_severity", "ai_prompt", "ai_alert_prompt", "ai_qa_prompt", "feishu_enabled", "web_protocol", "web_public_host", "feishu_alert_chat_ids"}
 DEFAULTS = {"min_severity": "3", "ai_min_severity": "4", "feishu_enabled": "false", "web_protocol": "http"}
