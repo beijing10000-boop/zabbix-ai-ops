@@ -71,3 +71,5 @@ pre{background:#0e1b2d;color:#dbe9f6;border:1px solid #283d55}
 .extracted-style-8{margin-bottom:18px}
 .extracted-style-9{margin:0 0 22px;background:#f7f9ff}
 .extracted-style-10{margin-top:25px}
+
+@media(max-width:560px){.stats.extracted-style-3,.stats.extracted-style-4{grid-template-columns:1fr!important}}
