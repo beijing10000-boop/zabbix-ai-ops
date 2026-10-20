@@ -149,3 +149,20 @@ def test_zabbix_event_deep_link():
     assert "eventid=6057922" in recovery["elements"][0]["text"]["content"]
     no_id=worker.make_card({**event,"trigger_id":"{TRIGGER.ID}"})
     assert "tr_events.php" not in str(no_id)
+
+def test_alert_mute_button_targets_host_and_trigger():
+    event={"event_id":"777001","host_id":"101","trigger_id":"202",
+           "severity":"2","event_value":"1","event_name":"Load high"}
+    card=worker.make_card(event)
+    buttons=[a for el in card["elements"] if el["tag"]=="action" for a in el["actions"]]
+    assert len(buttons)==1
+    assert "mute_host=101" in buttons[0]["url"]
+    assert "mute_trigger=202" in buttons[0]["url"]
+    recovery=worker.make_card({**event,"event_value":"0"})
+    assert not any(el["tag"]=="action" for el in recovery["elements"])
+
+def test_alert_mute_requires_matching_identity():
+    event={"event_id":"777002","host_id":"{HOST.ID}","trigger_id":"202",
+           "severity":"2","event_value":"1"}
+    card=worker.make_card(event)
+    assert not any(el["tag"]=="action" for el in card["elements"])
