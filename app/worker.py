@@ -9,6 +9,7 @@ from openai import AsyncOpenAI
 from redis import Redis
 from rq import Worker, Queue
 from .main import read_setting
+from .text_safety import md_safe
 
 log = logging.getLogger(__name__)
 BASE_PROMPT = ("你是资深 Zabbix 运维分析师。只允许只读查询。严禁修改系统。"
@@ -48,7 +49,7 @@ async def analyze(event):
     return data
 
 def safe(value,n):
-    return str(value or "未提供").replace("\n"," ")[:n]
+    return md_safe(str(value or "未提供").replace("\n"," "),n)
 
 def valid_macro(value):
     """Suppress unresolved Zabbix macros, empty values and display placeholders."""
@@ -97,7 +98,7 @@ def make_card(event, info=None, *, analysis=False):
     if analysis and not recovery:
         title = LEVELS.get(sev, "未知") + "｜AI 分析结果"
     groups = valid_macro(event.get("host_groups")) or valid_macro(info.get("host_groups"))
-    event_name = valid_macro(event.get("event_name")) or "未知事件"
+    event_name = md_safe(valid_macro(event.get("event_name")) or "未知事件",250)
     lines = [
         "**主机名称**  " + safe(event.get("host_name"), 80),
         "**主机 IP**  " + safe(event.get("host_ip"), 50),
@@ -158,7 +159,7 @@ def make_card(event, info=None, *, analysis=False):
                     "content": "**"+label+"**\n"+safe(detail,size)}})
     return {
         "config":{"wide_screen_mode":True},
-        "header":{"title":{"tag":"plain_text","content":title},
+        "header":{"title":{"tag":"plain_text","content":md_safe(title,100)},
                   "template":"green" if recovery else COLORS.get(sev,"grey")},
         "elements":elements
     }
