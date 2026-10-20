@@ -178,6 +178,7 @@ def update_settings(body: SettingsUpdate):
             db.execute("INSERT INTO settings(key,value,secret) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, secret=excluded.secret",
                        (key, stored, int(key in SENSITIVE)))
             db.execute("INSERT INTO audit(action,key) VALUES(?,?)", ("settings_update", key))
+    invalidate_settings()
     return {"ok": True}
 
 def record_ai_question(source, request_id, question, status="pending", error_type=None):
