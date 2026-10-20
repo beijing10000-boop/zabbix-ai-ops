@@ -3,6 +3,7 @@ x-app-env: &app-env
   DATA_DIR: /app/data
   REDIS_URL: redis://redis:6379/0
   APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:?set key}
+  ZABBIX_FRONTEND_URL: ${ZABBIX_FRONTEND_URL:?set frontend URL}
 services:
   redis:
     image: redis:7-alpine
@@ -23,7 +24,6 @@ services:
       FEISHU_LOGIN_REDIRECT_URI: ${FEISHU_LOGIN_REDIRECT_URI:-}
       WEB_PROTOCOL: ${WEB_PROTOCOL:-http}
       WEB_PUBLIC_HOST: ${WEB_PUBLIC_HOST:-}
-      ZABBIX_FRONTEND_URL: ${ZABBIX_FRONTEND_URL:-}
     volumes: [appdata:/app/data]
     depends_on: [redis]
   alert-worker:
