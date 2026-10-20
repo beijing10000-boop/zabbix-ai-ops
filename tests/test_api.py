@@ -79,3 +79,19 @@ def test_beijing_time_handles_sqlite_utc():
     assert beijing_time("2026-10-19 10:42:16") == "2026-10-19 18:42:16"
     assert beijing_time("2026-10-19T10:42:16Z") == "2026-10-19 18:42:16"
     assert beijing_time(None) is None
+
+def test_ai_question_metrics_separate_from_alerts():
+    from app.main import record_ai_question
+    rid = "test-question-metric-001"
+    record_ai_question("feishu", rid, "查询 CPU 使用率", "running")
+    record_ai_question("feishu", rid, "查询 CPU 使用率", "success")
+    h = {"Authorization":"Bearer test-admin"}
+    stats = client.get("/api/v1/qa-stats",headers=h)
+    assert stats.status_code == 200
+    assert stats.json()["success"] >= 1
+    rows = client.get("/api/v1/qa-events",headers=h)
+    assert rows.status_code == 200
+    found = [x for x in rows.json() if x["request_id"] == rid]
+    assert len(found) == 1 and found[0]["status"] == "success"
+    assert found[0]["source"] == "feishu"
+    assert client.get("/api/v1/qa-events").status_code == 401
