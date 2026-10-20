@@ -32,7 +32,7 @@ def _event(value):
 
 def _authorized(operator_open_id):
     import os
-    ids = read_setting("feishu_admin_open_ids") or os.getenv("FEISHU_ADMIN_OPEN_IDS", "")
+    ids = read_setting("feishu_admin_open_ids")
     admins = {s.strip() for s in ids.split(",") if s.strip()}
     return operator_open_id in admins if operator_open_id else False
 
