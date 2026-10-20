@@ -18,12 +18,6 @@ COOKIE = "zabbix_ai_session"
 STATE_COOKIE = "zabbix_ai_oauth_state"
 TTL = 8 * 3600
 
-def _tables(db):
-    db.execute("CREATE TABLE IF NOT EXISTS oauth_states (state_hash TEXT PRIMARY KEY, expires INTEGER NOT NULL)")
-    db.execute("""CREATE TABLE IF NOT EXISTS admin_sessions (
-        token_hash TEXT PRIMARY KEY, open_id TEXT NOT NULL, name TEXT NOT NULL,
-        csrf TEXT NOT NULL, expires INTEGER NOT NULL)""")
-
 def _hash(value):
     return hashlib.sha256(value.encode()).hexdigest()
 
@@ -74,7 +68,6 @@ def feishu_login():
     redirect = _redirect_uri()
     state = secrets.token_urlsafe(32)
     with connection() as db:
-        _tables(db)
         db.execute("DELETE FROM oauth_states WHERE expires < ?", (int(time.time()),))
         db.execute("INSERT INTO oauth_states VALUES (?,?)", (_hash(state),int(time.time())+300))
     target = "https://open.feishu.cn/open-apis/authen/v1/index?" + urlencode(
@@ -90,7 +83,6 @@ async def feishu_callback(request:Request, code: str = "", state: str = ""):
     if not code or not state or not cookie_state or not hmac.compare_digest(state,cookie_state):
         raise HTTPException(403, "飞书登录校验失败，请重新登录")
     with connection() as db:
-        _tables(db)
         found=db.execute("SELECT expires FROM oauth_states WHERE state_hash=?",(_hash(state),)).fetchone()
         db.execute("DELETE FROM oauth_states WHERE state_hash=?",(_hash(state),))
         if not found or found[0] < int(time.time()):
@@ -128,7 +120,6 @@ async def feishu_callback(request:Request, code: str = "", state: str = ""):
     token=secrets.token_urlsafe(48)
     csrf=secrets.token_urlsafe(32)
     with connection() as db:
-        _tables(db)
         db.execute("DELETE FROM admin_sessions WHERE expires < ?",(int(time.time()),))
         db.execute("INSERT INTO admin_sessions VALUES (?,?,?,?,?)",
                    (_hash(token),open_id,str(profile.get("name") or "管理员")[:100],csrf,int(time.time())+TTL))
@@ -142,8 +133,7 @@ def authenticate(request:Request):
     raw=request.cookies.get(COOKIE, "")
     if raw:
         with connection() as db:
-            _tables(db)
-            row=db.execute("SELECT open_id,name,csrf,expires FROM admin_sessions WHERE token_hash=?",
+                row=db.execute("SELECT open_id,name,csrf,expires FROM admin_sessions WHERE token_hash=?",
                            (_hash(raw),)).fetchone()
         if row and row[3] > int(time.time()) and row[0] in _admins():
             if request.method not in ("GET","HEAD","OPTIONS"):
