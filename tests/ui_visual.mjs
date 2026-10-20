@@ -43,7 +43,7 @@ for(const [theme,width,height] of [['light',1440,900],['dark',1440,900],['light'
  const overflow=await page.evaluate(()=>document.documentElement.scrollWidth>window.innerWidth);
  assert.equal(overflow,false,theme+' '+width+' horizontal overflow');
  assert.equal(await page.locator('[onclick],[onkeydown],[style]').count(),0,'inline handlers/styles forbidden');
- assert.equal(await page.locator('h1').first().innerText(),'总览仪表盘');
+ assert.equal(await page.locator('#page-title').innerText(),'总览仪表盘');
  const csp=(await page.request.get(base)).headers()['content-security-policy'];
  assert.equal(csp,"default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'");
  if(width===1440){
