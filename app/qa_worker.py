@@ -13,7 +13,7 @@ from .feishu_client import reply_card, send_card, update_card, send_text
 
 log = logging.getLogger(__name__)
 
-async def execute(chat_id, question, message_id, sender_open_id=None, parent_id=None):
+async def execute(chat_id, question, message_id, sender_open_id=None, parent_id=None, root_id=None):
     # Approval is a deterministic server-side command, not an LLM tool call.
     # No credentials or arbitrary MCP write tool are available to this path.
     action = consume_decision(question, sender_open_id, chat_id)
@@ -33,7 +33,8 @@ async def execute(chat_id, question, message_id, sender_open_id=None, parent_id=
         log.exception("FEISHU_PROGRESS_FAILED message_id=%s", message_id)
 
     try:
-        stored = recall(chat_id, parent_id)
+        stored = recall(chat_id, parent_id) or (recall(chat_id, root_id) if root_id and root_id != parent_id else None)
+        log.info("FEISHU_CONTEXT_RESOLVED message_id=%s found=%s parent=%s root=%s", message_id, bool(stored), bool(parent_id), bool(root_id))
         context = format_context(stored)
         if parent_id and not stored:
             try:
@@ -64,8 +65,8 @@ async def execute(chat_id, question, message_id, sender_open_id=None, parent_id=
                 log.exception("FEISHU_ERROR_UPDATE_FAILED message_id=%s", message_id)
         await reply_card(message_id, "AI 分析失败", "分析失败，请稍后重试或联系管理员。", "red")
 
-def process_question(chat_id, question, message_id, sender_open_id=None, parent_id=None):
-    return asyncio.run(execute(chat_id, question, message_id, sender_open_id, parent_id))
+def process_question(chat_id, question, message_id, sender_open_id=None, parent_id=None, root_id=None):
+    return asyncio.run(execute(chat_id, question, message_id, sender_open_id, parent_id, root_id))
 
 if __name__ == "__main__":
     redis = Redis.from_url(os.getenv("REDIS_URL", "redis://redis:6379/0"))
