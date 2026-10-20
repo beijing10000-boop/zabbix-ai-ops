@@ -6,7 +6,8 @@ import os
 import secrets
 import sqlite3
 from datetime import datetime, timezone
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+SHANGHAI = ZoneInfo("Asia/Shanghai")
 from contextlib import contextmanager
 from pathlib import Path
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
@@ -75,8 +76,8 @@ def beijing_time(value):
         moment = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
         if moment.tzinfo is None:
             moment = moment.replace(tzinfo=timezone.utc)
-        return moment.astimezone(ZoneInfo("Asia/Shanghai")).strftime("%Y-%m-%d %H:%M:%S")
-    except (ValueError, TypeError):
+        return moment.astimezone(SHANGHAI).strftime("%Y-%m-%d %H:%M:%S")
+    except (ValueError, TypeError, ZoneInfoNotFoundError):
         return value
 
 
