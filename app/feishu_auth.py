@@ -83,7 +83,6 @@ async def feishu_callback(request:Request, code: str = "", state: str = ""):
     if not code or not state or not cookie_state or not hmac.compare_digest(state,cookie_state):
         raise HTTPException(403, "飞书登录校验失败，请重新登录")
     with connection() as db:
-        _tables(db)
         found=db.execute("SELECT expires FROM oauth_states WHERE state_hash=?",(_hash(state),)).fetchone()
         db.execute("DELETE FROM oauth_states WHERE state_hash=?",(_hash(state),))
         if not found or found[0] < int(time.time()):
@@ -121,7 +120,6 @@ async def feishu_callback(request:Request, code: str = "", state: str = ""):
     token=secrets.token_urlsafe(48)
     csrf=secrets.token_urlsafe(32)
     with connection() as db:
-        _tables(db)
         db.execute("DELETE FROM admin_sessions WHERE expires < ?",(int(time.time()),))
         db.execute("INSERT INTO admin_sessions VALUES (?,?,?,?,?)",
                    (_hash(token),open_id,str(profile.get("name") or "管理员")[:100],csrf,int(time.time())+TTL))
@@ -135,7 +133,6 @@ def authenticate(request:Request):
     raw=request.cookies.get(COOKIE, "")
     if raw:
         with connection() as db:
-            _tables(db)
             row=db.execute("SELECT open_id,name,csrf,expires FROM admin_sessions WHERE token_hash=?",
                            (_hash(raw),)).fetchone()
         if row and row[3] > int(time.time()) and row[0] in _admins():
