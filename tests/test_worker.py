@@ -26,7 +26,8 @@ def test_all_alerts_notified_before_ai_and_severity_gate(monkeypatch):
     assert len(sent)==3
     recovered=asyncio.run(worker.handle_alert({"event_id":"recovered","severity":"5","event_value":"0"}))
     assert recovered["ai_skipped"] is True
-    assert len(sent)==4
+    assert len(sent)==3
+    assert recovered["recovery_suppressed"] is True
 
 
 def test_ai_failure_does_not_block_initial_alert(monkeypatch):
@@ -167,3 +168,24 @@ def test_alert_mute_requires_matching_identity():
            "severity":"2","event_value":"1"}
     card=worker.make_card(event)
     assert not any(el["tag"]=="action" for el in card["elements"])
+
+def test_recovery_sent_only_for_original_feishu_sent_problem(monkeypatch):
+    from app.main import connection
+    sent=[]
+    async def notify(card):
+        sent.append(card)
+    monkeypatch.setattr(worker,"notify",notify)
+    monkeypatch.setattr(worker,"cfg",lambda key:"true" if key=="feishu_enabled" else "4")
+    for eid,state in [("paired001","sent"),("muted001","muted"),
+                      ("failed001","failed"),("disabled001","disabled")]:
+        with connection() as db:
+            db.execute("""INSERT OR REPLACE INTO alert_events
+                (event_id,event_value,event_name,host_name,severity,notify_status)
+                VALUES (?, '1', 'test', 'host', 2, ?)""",(eid,state))
+    for eid in ("muted001","failed001","disabled001","missing001"):
+        result=asyncio.run(worker.handle_alert({"event_id":eid,"event_value":"0","severity":"2"}))
+        assert result["recovery_suppressed"] is True
+    assert sent==[]
+    result=asyncio.run(worker.handle_alert({"event_id":"paired001","event_value":"0","severity":"2"}))
+    assert result["notified"] is True
+    assert len(sent)==1
