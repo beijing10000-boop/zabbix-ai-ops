@@ -114,7 +114,7 @@ def home():
 def health():
     with connection() as db:
         db.execute("SELECT 1").fetchone()
-    return {"ok": True}
+    return {"ok": True, "version": app.version}
 
 @app.get("/api/v1/settings", dependencies=[Depends(require_admin)])
 def get_settings():
