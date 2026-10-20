@@ -13,6 +13,8 @@ def test_admin_open_ids_use_web_settings_with_env_fallback(monkeypatch):
     assert alert_actions._authorized("ou_webadmin")
     assert not alert_actions._authorized("ou_bootstrap")
     assert not alert_mute.handle_mute_action({"op":"mute_alert"},"ou_bootstrap")[0]
+    with connection() as db:
+        db.execute("DELETE FROM settings WHERE key='feishu_admin_open_ids'")
 
 def test_admin_open_ids_can_be_saved_through_web_api(monkeypatch):
     from fastapi.testclient import TestClient
@@ -25,3 +27,5 @@ def test_admin_open_ids_can_be_saved_through_web_api(monkeypatch):
     assert response.status_code == 200
     assert client.get("/api/v1/settings",headers=h).json()["feishu_admin_open_ids"]=="ou_example_123,ou_example_456"
     assert client.put("/api/v1/settings",headers=h,json={"values":{"feishu_admin_open_ids":"admin"}}).status_code==422
+    with connection() as db:
+        db.execute("DELETE FROM settings WHERE key='feishu_admin_open_ids'")
