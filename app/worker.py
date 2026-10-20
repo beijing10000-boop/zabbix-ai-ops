@@ -50,48 +50,85 @@ async def analyze(event):
 def safe(value,n):
     return str(value or "未提供").replace("\n"," ")[:n]
 
+def valid_macro(value):
+    """Suppress unresolved Zabbix macros, empty values and display placeholders."""
+    value = str(value or "").strip()
+    return value if value and "{" not in value and value not in ("待查询", "未查到", "未提供", "UNKNOWN") else ""
+
+
+def event_duration(event):
+    """Use Zabbix duration macro; derive it from event times only if absent."""
+    value = valid_macro(event.get("event_duration"))
+    if value:
+        return value[:80]
+    try:
+        from datetime import datetime
+        began = datetime.strptime(event["event_date"] + " " + event["event_time"], "%Y.%m.%d %H:%M:%S")
+        ended = datetime.strptime(event["recovery_date"] + " " + event["recovery_time"], "%Y.%m.%d %H:%M:%S")
+        seconds = int((ended - began).total_seconds())
+        if seconds < 0:
+            return ""
+        days, rem = divmod(seconds, 86400)
+        hours, rem = divmod(rem, 3600)
+        minutes, seconds = divmod(rem, 60)
+        return (f"{days}天 " if days else "") + f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+    except (KeyError, ValueError, TypeError):
+        return ""
+
+
 def make_card(event, info=None, *, analysis=False):
-    """Compact operational event card; detailed diagnosis only for severe AI results."""
+    """Mobile-friendly, compact ops event; separate rich severe AI analysis."""
     info = info or {}
     sev = str(event.get("severity", "0"))
     recovery = str(event.get("event_value", "1")) == "0"
-    lines = [
-        "**主机名称：** " + safe(event.get("host_name"), 80),
-        "**主机 IP：** " + safe(event.get("host_ip"), 50),
-    ]
-    groups = event.get("host_groups") or info.get("host_groups")
-    if groups and str(groups).strip() not in ("待查询", "未查到", "未提供"):
-        lines.append("**所属分组：** " + safe(groups, 140))
-    date = event.get("recovery_date") if recovery else event.get("event_date")
-    time = event.get("recovery_time") if recovery else event.get("event_time")
-    if not date or not time:
-        date = date or event.get("event_date")
-        time = time or event.get("event_time")
-    if date and time and "{" not in (str(date) + str(time)):
-        lines.append(("**恢复时间：** " if recovery else "**告警时间：** ") + safe(str(date) + " " + str(time), 55))
-    lines += [
-        "**事件：** " + safe(event.get("event_name"), 200),
-        "**事件 ID：** " + safe(event.get("event_id"), 40),
-        "**事件来源：** 172.20.200.93 转发",
-    ]
-    elements = [{"tag": "div", "text": {"tag": "lark_md", "content": "\n".join(lines)}}]
-    if analysis and not recovery and sev in ("4", "5"):
-        elements.append({"tag": "hr"})
-        for title, key, size in [("故障原因", "cause", 100),
-                                  ("处理建议", "action", 150),
-                                  ("AI 分析", "analysis", 500)]:
-            value = info.get(key)
-            if value:
-                elements.append({"tag": "div", "text": {
-                    "tag": "lark_md", "content": "**" + title + "**\\n" + safe(value, size)}})
-    title = ("告警已恢复" if recovery else LEVELS.get(sev, "未知"))
+    title = "告警恢复" if recovery else LEVELS.get(sev, "未知")
     if analysis and not recovery:
         title = LEVELS.get(sev, "未知") + "｜AI 分析结果"
-    return {"config": {"wide_screen_mode": True},
-            "header": {"title": {"tag": "plain_text", "content": title},
-                       "template": "green" if recovery else COLORS.get(sev, "grey")},
-            "elements": elements}
-
+    groups = valid_macro(event.get("host_groups")) or valid_macro(info.get("host_groups"))
+    event_name = valid_macro(event.get("event_name")) or "未知事件"
+    lines = [
+        "**主机名称**  " + safe(event.get("host_name"), 80),
+        "**主机 IP**  " + safe(event.get("host_ip"), 50),
+    ]
+    if groups:
+        lines.append("**所属分组**  " + safe(groups, 180))
+    if recovery:
+        started = valid_macro(event.get("event_date")) and valid_macro(event.get("event_time"))
+        if started:
+            lines.append("**告警时间**  " + event["event_date"] + " " + event["event_time"])
+        recovery_date = valid_macro(event.get("recovery_date"))
+        recovery_time = valid_macro(event.get("recovery_time"))
+        if recovery_date and recovery_time:
+            lines.append("**恢复时间**  " + recovery_date + " " + recovery_time)
+        duration = event_duration(event)
+        if duration:
+            lines.append("**持续时间**  " + duration)
+    else:
+        occurred_date = valid_macro(event.get("event_date"))
+        occurred_time = valid_macro(event.get("event_time"))
+        if occurred_date and occurred_time:
+            lines.append("**发生时间**  " + occurred_date + " " + occurred_time)
+    lines.extend([
+        "**事件名称**  " + safe(event_name, 250),
+        "**事件 ID**  " + safe(event.get("event_id"), 40),
+        "**事件来源**  172.20.200.93 转发",
+    ])
+    elements = [
+        {"tag":"div", "text":{"tag":"lark_md", "content":"\n".join(lines)}}
+    ]
+    if analysis and not recovery and sev in ("4","5"):
+        for label, field, size in (("故障原因","cause",120),("处理建议","action",160),("AI 分析","analysis",500)):
+            detail = valid_macro(info.get(field))
+            if detail:
+                elements.append({"tag":"hr"})
+                elements.append({"tag":"div","text":{"tag":"lark_md",
+                    "content": "**"+label+"**\n"+safe(detail,size)}})
+    return {
+        "config":{"wide_screen_mode":True},
+        "header":{"title":{"tag":"plain_text","content":title},
+                  "template":"green" if recovery else COLORS.get(sev,"grey")},
+        "elements":elements
+    }
 
 async def notify(card):
     """Send alert cards solely through the configured Feishu enterprise app."""
