@@ -40,6 +40,18 @@ def connection():
         db.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, secret INTEGER NOT NULL)")
         db.execute("CREATE TABLE IF NOT EXISTS audit (id INTEGER PRIMARY KEY AUTOINCREMENT, action TEXT, key TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP)")
         db.execute("""CREATE TABLE IF NOT EXISTS alert_events (id INTEGER PRIMARY KEY AUTOINCREMENT, event_id TEXT NOT NULL, event_value TEXT NOT NULL, event_name TEXT, host_name TEXT, severity INTEGER, received_at TEXT DEFAULT CURRENT_TIMESTAMP, notify_status TEXT DEFAULT 'queued', ai_status TEXT DEFAULT 'not_required', UNIQUE(event_id,event_value))""")
+        db.execute("""CREATE TABLE IF NOT EXISTS ai_questions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            source TEXT NOT NULL,
+            request_id TEXT NOT NULL,
+            question TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            completed_at TEXT,
+            error_type TEXT,
+            UNIQUE(source,request_id)
+        )""")
+        db.execute("CREATE INDEX IF NOT EXISTS ix_ai_questions_created ON ai_questions(id DESC)")
         db.commit()
         yield db
         db.commit()
@@ -166,6 +178,41 @@ async def enable_write():
         db.execute("INSERT INTO settings(key,value,secret) VALUES ('write_enabled','true',0) ON CONFLICT(key) DO UPDATE SET value='true',secret=0")
         db.execute("INSERT INTO audit(action,key) VALUES ('write_enabled','event_acknowledge')")
     return {"enabled": True, "allowed_action": "event_acknowledge"}
+
+def record_ai_question(source, request_id, question, status="pending", error_type=None):
+    """Persist question lifecycle for dashboard metrics; no answer or credential storage."""
+    if source not in ("feishu", "web") or status not in ("pending", "running", "success", "failed"):
+        raise ValueError("invalid question metrics")
+    with connection() as db:
+        db.execute("""INSERT INTO ai_questions (source,request_id,question,status,error_type,completed_at)
+            VALUES (?,?,?,?,?,CASE WHEN ? IN ('success','failed') THEN CURRENT_TIMESTAMP ELSE NULL END)
+            ON CONFLICT(source,request_id) DO UPDATE SET
+            status=excluded.status, error_type=excluded.error_type,
+            completed_at=excluded.completed_at""",
+            (source, str(request_id)[:120], str(question)[:500], status, error_type, status))
+
+
+@app.get("/api/v1/qa-stats", dependencies=[Depends(require_admin)])
+def qa_stats():
+    with connection() as db:
+        rows = db.execute("SELECT status, COUNT(*) FROM ai_questions GROUP BY status").fetchall()
+    counts = dict(rows)
+    return {"total":sum(counts.values()), "pending":counts.get("pending",0),
+            "running":counts.get("running",0),"success":counts.get("success",0),
+            "failed":counts.get("failed",0)}
+
+
+@app.get("/api/v1/qa-events", dependencies=[Depends(require_admin)])
+def qa_events(limit: int = 100, offset: int = 0):
+    limit = min(max(limit,1),200)
+    offset = max(offset,0)
+    with connection() as db:
+        rows = db.execute("""SELECT source,request_id,question,status,created_at,completed_at,error_type
+            FROM ai_questions ORDER BY id DESC LIMIT ? OFFSET ?""", (limit,offset)).fetchall()
+    return [{"source":r[0],"request_id":r[1],"question":r[2],"status":r[3],
+             "created_at":beijing_time(r[4]),"completed_at":beijing_time(r[5]),
+             "error_type":r[6]} for r in rows]
+
 
 @app.get("/api/v1/alert-stats", dependencies=[Depends(require_admin)])
 def alert_stats():
