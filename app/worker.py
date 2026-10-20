@@ -142,10 +142,10 @@ def make_card(event, info=None, *, analysis=False):
             elements.append({"tag": "div", "text": {"tag": "lark_md",
                 "content": "**告警操作**  ·  临时屏蔽仅影响后续飞书通知"}})
             elements.append({"tag": "action", "actions": [
-                {"tag": "button", "text": {"tag": "plain_text", "content": "🔕 暂时屏蔽（1小时）"},
-                 "type": "default", "value": {"op": "mute_alert", "host_id": host_id,
-                     "trigger_id": trigger_id, "hours": 1,
-                     "sig": action_signature(host_id, trigger_id, 1)}},
+                {"tag": "button", "text": {"tag": "plain_text", "content": "🔕 暂时屏蔽"},
+                 "type": "default", "value": {"op": "choose_mute", "event_id": event_id,
+                     "trigger_id": trigger_id,
+                     "sig": action_signature(event_id, trigger_id, 0)}},
                 {"tag": "button", "text": {"tag": "plain_text", "content": "🤖 AI分析"},
                  "type": "primary", "value": {"op": "analyze_alert", "event_id": event_id,
                      "trigger_id": trigger_id, "sig": action_signature(event_id, trigger_id, 0)}}
