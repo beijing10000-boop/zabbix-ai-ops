@@ -1,3 +1,40 @@
+/* UI primitives — vanilla JS, no external framework or remote fonts. */
+const UI=(()=>{
+  const svgPaths={
+    grid:'<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>',
+    settings:'<path d="M4 6h16M4 12h16M4 18h16"/><circle cx="8" cy="6" r="2"/><circle cx="16" cy="12" r="2"/>',
+    bell:'<path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9z"/><path d="M10 21h4"/>',
+    chat:'<path d="M20 11.5a8.5 8.5 0 1 1-4.5-7.5"/><path d="M12 3h9v7l-3-2h-6z"/>',
+    terminal:'<rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3m6 0h4"/>',
+    logs:'<path d="M6 4h12M6 9h12M6 14h12M6 19h8"/>',
+    plus:'<path d="M12 5v14M5 12h14"/>',close:'<path d="M6 6l12 12M18 6 6 18"/>',
+    arrow:'<path d="m9 18 6-6-6-6"/>',check:'<path d="m5 12 4 4L19 6"/>',
+    user:'<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+    clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l4 2"/>',
+    shield:'<path d="m12 2 8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z"/><path d="m9 12 2 2 4-4"/>',
+    activity:'<path d="M3 12h4l3-8 4 16 3-8h4"/>',refresh:'<path d="M20 11a8 8 0 1 0-2 6m2-3v-5h-5"/>',
+    send:'<path d="m22 2-7 20-4-9-9-4z"/><path d="M22 2 11 13"/>',
+    database:'<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 4 18 4 18 0V5M3 12c0 4 18 4 18 0"/>',
+    cpu:'<rect x="5" y="5" width="14" height="14" rx="2"/><path d="M9 9h6v6H9zM9 1v4m6-4v4M9 19v4m6-4v4M1 9h4m-4 6h4m14-6h4m-4 6h4"/>'
+  };
+  function node(tag,cls='',text=null){const e=document.createElement(tag);if(cls)e.className=cls;if(text!==null)e.textContent=String(text);return e}
+  function icon(name){const e=document.createElementNS('http://www.w3.org/2000/svg','svg');e.setAttribute('viewBox','0 0 24 24');e.setAttribute('aria-hidden','true');e.innerHTML=svgPaths[name]||svgPaths.activity;return e}
+  function Button(label,fn,variant='primary',iconName=null){const b=node('button','btn '+(variant==='primary'?'':variant));b.type='button';if(iconName)b.append(icon(iconName));b.append(document.createTextNode(label));if(fn)b.addEventListener('click',fn);return b}
+  function Card(children=[],extra=''){const c=node('section','card '+extra);for(const child of children)c.append(typeof child==='string'?document.createTextNode(child):child);return c}
+  function StatusDot(text,state='gray'){return node('span','status-dot '+state,text)}
+  function Segmented(items,value,change){const wrap=node('div','segmented');wrap.setAttribute('role','tablist');const update=()=>{for(const child of wrap.children){child.setAttribute('aria-selected',String(child.dataset.value===String(value)))}};for(const item of items){const b=node('button','',item.label);b.type='button';b.dataset.value=item.value;b.setAttribute('role','tab');b.addEventListener('click',()=>{value=item.value;update();change(value)});wrap.append(b)}update();return wrap}
+  function Toggle(value,change){const b=node('button','toggle');b.type='button';b.setAttribute('role','switch');b.setAttribute('aria-label','切换开关');const update=()=>b.setAttribute('aria-checked',String(value));b.addEventListener('click',()=>{value=!value;update();change(value)});update();return b}
+  function GroupedList(rows){const list=node('div','grouped');for(const row of rows){const r=node('div','group-row'),l=node('div','leading');const texts=node('div');texts.append(node('div','row-title',row.label));if(row.help)texts.append(node('div','row-help',row.help));if(row.icon)l.append(icon(row.icon));l.append(texts);r.append(l);if(row.control)r.append(row.control);else if(row.value!==undefined)r.append(node('span','row-value',row.value));list.append(r)}return list}
+  let toastTimer;
+  function Toast(text,kind='success'){let bar=document.getElementById('toast');if(!bar){bar=node('div','toast');bar.id='toast';bar.setAttribute('role','status');bar.setAttribute('aria-live','polite');document.body.append(bar)}bar.replaceChildren(icon(kind==='error'?'close':'check'),document.createTextNode(text));bar.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>bar.classList.remove('show'),2500)}
+  let activeSheet;
+  function Sheet({title,description='',content,action='确认',danger=false,onConfirm}){if(activeSheet)activeSheet.remove();const overlay=node('div','overlay');const dialog=node('div','sheet');dialog.setAttribute('role','dialog');dialog.setAttribute('aria-modal','true');dialog.setAttribute('aria-label',title);dialog.append(node('h2','',title));if(description)dialog.append(node('p','footnote',description));if(content)dialog.append(content);const actions=node('div','sheet-actions');const close=()=>{overlay.remove();activeSheet=null};const cancel=Button('取消',close,'secondary');const ok=Button(action,async()=>{try{const result=await onConfirm?.();if(result!==false)close()}catch(e){Toast(e.message,'error')}},danger?'danger':'primary');actions.append(cancel,ok);dialog.append(actions);overlay.append(dialog);document.body.append(overlay);activeSheet=overlay;overlay.addEventListener('click',e=>{if(e.target===overlay)close()});const key=e=>{if(e.key==='Escape'){close();document.removeEventListener('keydown',key)}};document.addEventListener('keydown',key);cancel.focus();return {close,dialog}}
+  function Drawer(title,content){const old=document.getElementById('ui-drawer');if(old)old.remove();document.getElementById('ui-drawer-mask')?.remove();const mask=node('div','drawer-mask');mask.id='ui-drawer-mask';const d=node('aside','drawer');d.id='ui-drawer';d.setAttribute('role','dialog');d.setAttribute('aria-modal','true');d.setAttribute('aria-label',title);const top=node('div','drawer-top');top.append(node('h2','',title),Button('关闭',()=>{d.classList.remove('open');setTimeout(()=>{d.remove();mask.remove()},250)},'secondary','close'));d.append(top,content);document.body.append(mask,d);mask.addEventListener('click',()=>top.lastChild.click());requestAnimationFrame(()=>d.classList.add('open'));top.lastChild.focus();return d}
+  function LargeTitle(text,subtitle){const wrap=node('div','page-head');wrap.append(node('h1','',text));if(subtitle)wrap.append(node('p','footnote',subtitle));return wrap}
+  function Sidebar(items,selected,fn){const nav=node('nav');for(const item of items){const b=node('button','nav-item');b.type='button';b.dataset.page=item.id;if(item.id===selected)b.setAttribute('aria-current','page');b.append(icon(item.icon),document.createTextNode(item.label));b.addEventListener('click',()=>fn(item.id));nav.append(b)}return nav}
+  return {node,icon,Button,Card,StatusDot,Segmented,Toggle,GroupedList,Toast,Sheet,Drawer,LargeTitle,Sidebar}
+})();
+
 
 let csrf='',settings={},currentUser={};
 const title={dashboard:'总览仪表盘',config:'系统配置',debug:'连接调试',ask:'AI 诊断助手',logs:'运行日志'};
