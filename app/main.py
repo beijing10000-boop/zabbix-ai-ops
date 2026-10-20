@@ -23,7 +23,7 @@ ADMIN_TOKEN = os.getenv("ADMIN_API_TOKEN", "")
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 app = FastAPI(title="Zabbix AI Ops", version="0.2.0")
 SENSITIVE = {"openai_api_key", "mcp_token", "lark_app_secret", "zabbix_webhook_secret"}
-ALLOWED = SENSITIVE | {"openai_base_url", "openai_model", "mcp_url", "lark_app_id", "allowed_chat_ids", "min_severity", "ai_min_severity", "ai_prompt", "ai_alert_prompt", "ai_qa_prompt", "feishu_enabled", "web_protocol", "web_public_host", "feishu_alert_chat_ids"}
+ALLOWED = SENSITIVE | {"openai_base_url", "openai_model", "mcp_url", "lark_app_id", "allowed_chat_ids", "min_severity", "ai_min_severity", "ai_prompt", "ai_alert_prompt", "ai_qa_prompt", "feishu_enabled", "web_protocol", "web_public_host", "feishu_alert_chat_ids", "feishu_admin_open_ids"}
 DEFAULTS = {"min_severity": "3", "ai_min_severity": "4", "feishu_enabled": "false", "web_protocol": "http"}
 
 def cipher():
@@ -132,6 +132,11 @@ def update_settings(body: SettingsUpdate):
         raise HTTPException(status_code=422, detail=f"invalid settings: {sorted(invalid)}")
     if any(not isinstance(v, str) or len(v) > 12000 for v in body.values.values()):
         raise HTTPException(status_code=422, detail="invalid value")
+    if "feishu_admin_open_ids" in body.values:
+        import re
+        ids = [v.strip() for v in body.values["feishu_admin_open_ids"].split(",") if v.strip()]
+        if len(ids) > 100 or any(not re.fullmatch(r"ou_[A-Za-z0-9_-]{2,128}", v) for v in ids):
+            raise HTTPException(status_code=422, detail="飞书管理员 Open ID 格式错误（应为 ou_ 开头，多个用英文逗号分隔）")
     with connection() as db:
         for key, val in body.values.items():
             if key in SENSITIVE and val == "********":
