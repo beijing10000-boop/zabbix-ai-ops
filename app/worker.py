@@ -9,7 +9,6 @@ from openai import AsyncOpenAI
 from redis import Redis
 from rq import Worker, Queue
 from .main import read_setting
-from .text_safety import md_safe
 
 log = logging.getLogger(__name__)
 BASE_PROMPT = ("你是资深 Zabbix 运维分析师。只允许只读查询。严禁修改系统。"
@@ -49,7 +48,7 @@ async def analyze(event):
     return data
 
 def safe(value,n):
-    return md_safe(str(value or "未提供").replace("\n"," "), n)
+    return str(value or "未提供").replace("\n"," ")[:n]
 
 def valid_macro(value):
     """Suppress unresolved Zabbix macros, empty values and display placeholders."""
@@ -85,9 +84,7 @@ def zabbix_event_link(event):
         return ""
     # Internal Zabbix 7.4 frontend currently runs on port 8080.
     from urllib.parse import urlencode
-    base = os.getenv("ZABBIX_FRONTEND_URL", "").rstrip("/")
-    if not base:
-        return ""
+    base = os.getenv("ZABBIX_FRONTEND_URL", "http://172.20.200.90:8080").rstrip("/")
     return base + "/tr_events.php?" + urlencode({"triggerid": trigger_id, "eventid": event_id})
 
 
@@ -133,7 +130,7 @@ def make_card(event, info=None, *, analysis=False):
     else:
         lines.append("**事件来源**  Zabbix")
     elements = [
-        {"tag":"div", "text":{"tag":"lark_md", "content":md_safe("\n".join(lines), 4000)}}
+        {"tag":"div", "text":{"tag":"lark_md", "content":"\n".join(lines)}}
     ]
     if not recovery and not analysis:
         host_id=str(event.get("host_id") or "")
@@ -158,7 +155,7 @@ def make_card(event, info=None, *, analysis=False):
             if detail:
                 elements.append({"tag":"hr"})
                 elements.append({"tag":"div","text":{"tag":"lark_md",
-                    "content": md_safe("**"+label+"**\n"+safe(detail,size), 1000)}})
+                    "content": "**"+label+"**\n"+safe(detail,size)}})
     return {
         "config":{"wide_screen_mode":True},
         "header":{"title":{"tag":"plain_text","content":title},

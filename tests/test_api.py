@@ -41,16 +41,6 @@ def test_web_ask_calls_read_only_agent(monkeypatch):
         assert question == "查询严重告警"
         return "已从 MCP 查询"
     monkeypatch.setattr(ai_agent, "ask", fake_ask)
-    from app import main
-    class FakePipe:
-        def __enter__(self): return self
-        def __exit__(self, *args): return False
-        def incr(self, *_): return self
-        def expire(self, *_): return self
-        def execute(self): return [1, True]
-    class FakeRedis:
-        def pipeline(self, **kwargs): return FakePipe()
-    monkeypatch.setattr(main.Redis, "from_url", lambda *a, **k: FakeRedis())
     response=client.post("/api/v1/ask",
         headers={"Authorization":"Bearer test-admin"},
         json={"question":"查询严重告警"})

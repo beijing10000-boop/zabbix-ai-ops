@@ -19,7 +19,3 @@
 - Initialized private development repository from available prior generated materials.
 - Added Feishu QA progress-card adapter and initial operational documentation.
 - No production release has been tagged.
-
-## 2026-10-20 — Round 2 security
-- Alert IDs and severity now use strict numeric validation.
-- Feishu alert mute action signatures use a versioned derived key. **Buttons on previously issued alert cards will no longer work**; use newly sent alert cards.

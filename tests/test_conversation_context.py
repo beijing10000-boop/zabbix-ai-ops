@@ -12,7 +12,7 @@ class FakeRedis:
 def test_reply_context_is_scoped_by_chat_and_message(monkeypatch):
     fake = FakeRedis()
     monkeypatch.setattr(ctx, "_client", lambda: fake)
-    ctx.remember("oc_group1", "om_q1", "om_a1", "host.example.internal有什么告警", "Swap使用率过高，事件6042005")
+    ctx.remember("oc_group1", "om_q1", "om_a1", "172.20.200.6有什么告警", "Swap使用率过高，事件6042005")
     stored = ctx.recall("oc_group1", "om_a1")
     assert len(stored["turns"]) == 1
     assert "Swap使用率" in ctx.format_context(stored)
@@ -21,7 +21,7 @@ def test_reply_context_is_scoped_by_chat_and_message(monkeypatch):
     ctx.remember("oc_group1", "om_q2", "om_a2", "更深入分析", "请核实Swap趋势", stored)
     followup = ctx.recall("oc_group1", "om_a2")
     assert len(followup["turns"]) == 2
-    assert "host.example.internal" in ctx.format_context(followup)
+    assert "172.20.200.6" in ctx.format_context(followup)
 
 def test_context_limited_to_ten_turns(monkeypatch):
     fake = FakeRedis()

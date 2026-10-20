@@ -12,8 +12,7 @@ def action_signature(host_id, trigger_id, hours):
     if not key:
         raise RuntimeError("APP_ENCRYPTION_KEY missing")
     payload=f"mute_alert:{host_id}:{trigger_id}:{hours}".encode()
-    derived_key = hmac.new(key.encode(), b"mute-action-v1", hashlib.sha256).digest()
-    return hmac.new(derived_key, payload, hashlib.sha256).hexdigest()
+    return hmac.new(key.encode(),payload,hashlib.sha256).hexdigest()
 
 def handle_mute_action(value, operator_open_id):
     if not isinstance(value,dict) or value.get("op")!="mute_alert":

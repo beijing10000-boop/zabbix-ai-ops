@@ -6,7 +6,6 @@ from .main import read_setting, record_ai_question
 from redis import Redis
 from rq import Worker, Queue
 from .ai_agent import ask
-from .text_safety import md_safe
 from .alert_context import resolve_replied_event
 from .conversation_context import remember, recall, format_context
 from .feishu_client import reply_card, send_card, update_card, send_text
@@ -18,7 +17,7 @@ async def execute(chat_id, question, message_id, sender_open_id=None, parent_id=
     progress_id = None
     try:
         progress_id = await reply_card(message_id, "AI 分析中",
-             "**问题：** " + md_safe(question, 180) + "\n\n⏳ 正在查询 Zabbix MCP 并进行分析……")
+             "**问题：** " + question[:180] + "\n\n⏳ 正在查询 Zabbix MCP 并进行分析……")
         log.info("FEISHU_PROGRESS_SENT message_id=%s", message_id)
     except Exception:
         log.exception("FEISHU_PROGRESS_FAILED message_id=%s", message_id)
