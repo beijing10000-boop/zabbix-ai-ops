@@ -24,6 +24,10 @@ MOCKS = {
     "/api/v1/alert-stats": {"problems": 68, "recoveries": 54, "ai_analyses": 32},
     "/api/v1/qa-stats": {"total": 128, "success": 123, "failed": 2, "pending": 2, "running": 1},
     "/api/v1/settings": {},
+    "/api/v1/logs": {"audit":[],"failed_jobs":[],"queues":{}},
+    "/api/v1/ask": {"ok":True,"answer":"模拟模型返回"},
+    "/api/v1/qa-events": [],
+    "/api/v1/alert-events": [],
     "/api/v1/alert-mutes": [],
 }
 
@@ -44,8 +48,21 @@ with sync_playwright() as p:
             page.route("**/api/v1/**", mock_api)
             page.goto(BASE, wait_until="networkidle")
             page.locator("#app").wait_for(state="visible", timeout=20000)
-            page.screenshot(path=str(OUT / f"dashboard-{width}-{theme}.png"), full_page=True)
+            page.screenshot(path=str(OUT / f"dashboard-{width}-{theme}.png"), full_page=False)
             dimensions = page.evaluate("({width:document.documentElement.scrollWidth,view:innerWidth})")
+            assert page.locator("button[data-page='mutes']").count() == 1
+            assert "script-src 'self'" in page.goto(BASE).headers.get("content-security-policy", "")
+            page.locator("button[data-page='config']").click()
+            page.locator("#field-feishu_enabled").wait_for(state="attached")
+            assert page.locator("button[role=switch]").count() == 1
+            page.locator("button[data-page='mutes']").click()
+            assert page.locator("#mute-host").count() == 1
+            page.locator("button[data-page='ask']").click()
+            page.locator("#ask-question").fill("查询目前的严重告警")
+            page.locator("#ask-question").press("Enter")
+            page.locator(".chat-message.user").wait_for()
+            page.locator("button[data-page='logs']").click()
+            assert page.locator("#log-body").count() == 1
             findings.append({"width":width, "theme":theme, "dimensions":dimensions, "errors":errors})
             assert dimensions["width"] <= width + 1, f"Horizontal overflow: {dimensions}"
             assert not errors, f"Browser errors: {errors}"
