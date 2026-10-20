@@ -2,6 +2,9 @@
 import json
 import logging
 import httpx
+import os
+from redis import Redis
+from .main import REDIS_URL
 from .main import read_setting
 from .text_safety import md_safe
 log = logging.getLogger(__name__)
@@ -12,19 +15,39 @@ def make_card(title, text, template="blue"):
             "header":{"title":{"tag":"plain_text","content":title},"template":template},
             "elements":[{"tag":"div","text":{"tag":"lark_md","content":md_safe(text,11000)}}]}
 
+TOKEN_KEY = "zabbix-ai:feishu:tenant_token"
+INVALID_TOKEN_CODES = {99991663, 99991661}
+
+def token_cache():
+    return Redis.from_url(REDIS_URL)
+
 async def request(client, method, url, token=None, **kwargs):
-    headers = {"Authorization": "Bearer "+token} if token else {}
-    response = await client.request(method,url,headers=headers,**kwargs)
-    response.raise_for_status()
-    data = response.json()
-    if data.get("code",0) != 0:
-        raise RuntimeError("Feishu API error code=%s message=%s" % (data.get("code"),str(data.get("msg",""))[:120]))
-    return data
+    for attempt in range(2):
+        headers = {"Authorization": "Bearer " + token} if token else {}
+        response = await client.request(method, url, headers=headers, **kwargs)
+        response.raise_for_status()
+        data = response.json()
+        code = int(data.get("code",0))
+        if code == 0:
+            return data
+        if token and code in INVALID_TOKEN_CODES and attempt == 0:
+            token_cache().delete(TOKEN_KEY)
+            token = await get_token(client)
+            continue
+        raise RuntimeError("Feishu API error code=%s message=%s" %
+                           (code,str(data.get("msg",""))[:120]))
+    raise RuntimeError("Feishu token refresh failed")
 
 async def get_token(client):
-    data = await request(client,"POST",ROOT+"/auth/v3/tenant_access_token/internal",
-                         json={"app_id":read_setting("lark_app_id"),"app_secret":read_setting("lark_app_secret")})
-    return data["tenant_access_token"]
+    cached=token_cache().get(TOKEN_KEY)
+    if cached:
+        return cached.decode()
+    data=await request(client,"POST",ROOT+"/auth/v3/tenant_access_token/internal",
+                       json={"app_id":read_setting("lark_app_id"),"app_secret":read_setting("lark_app_secret")})
+    token=data["tenant_access_token"]
+    expire=max(1,int(data.get("expire",7200))-300)
+    token_cache().set(TOKEN_KEY,token,ex=expire)
+    return token
 
 async def send_card(chat_id,title,text,template="blue"):
     async with httpx.AsyncClient(timeout=30) as client:
