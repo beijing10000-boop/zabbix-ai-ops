@@ -2,11 +2,11 @@
 from app import feishu_auth, alert_actions, alert_mute
 from app.main import connection, read_setting
 
-def test_admin_open_ids_use_web_settings_with_env_fallback(monkeypatch):
+def test_admin_open_ids_read_database_only(monkeypatch):
     monkeypatch.setenv("FEISHU_ADMIN_OPEN_IDS", "ou_bootstrap")
     with connection() as db:
         db.execute("DELETE FROM settings WHERE key='feishu_admin_open_ids'")
-    assert "ou_bootstrap" in feishu_auth._admins()
+    assert "ou_bootstrap" not in feishu_auth._admins()
     with connection() as db:
         db.execute("INSERT INTO settings(key,value,secret) VALUES ('feishu_admin_open_ids','ou_webadmin',0)")
     assert feishu_auth._admins() == {"ou_webadmin"}
