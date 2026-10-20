@@ -89,7 +89,7 @@ def test_compact_alert_card_and_recovery():
     assert "AI 分析" not in body and "需人工核验" not in body
     recovered=worker.make_card({**event,"event_value":"0"})
     assert recovered["header"]["template"]=="green"
-    assert "告警已恢复" in recovered["header"]["title"]["content"]
+    assert "告警恢复" in recovered["header"]["title"]["content"]
 
 def test_severe_analysis_has_detail():
     event={"event_id":"6056232","severity":"4","event_value":"1"}
@@ -105,15 +105,35 @@ def test_alert_card_newlines_are_real():
     body = card["elements"][0]["text"]["content"]
     assert "\n" in body
     assert "\\n" not in body
-    assert body.splitlines()[0] == "**主机名称：** C15-HX-M"
+    assert body.splitlines()[0] == "**主机名称**  C15-HX-M"
 
 def test_zabbix_alarm_and_recovery_event_times():
     event={"event_id":"600001","severity":"2","event_value":"1",
            "event_date":"2026.10.19","event_time":"19:53:20",
            "recovery_date":"2026.10.19","recovery_time":"20:01:21"}
     problem=str(worker.make_card(event))
-    assert "告警时间" in problem and "19:53:20" in problem
+    assert "发生时间" in problem and "19:53:20" in problem
     recovered=str(worker.make_card({**event,"event_value":"0"}))
     assert "恢复时间" in recovered and "20:01:21" in recovered
     unresolved=str(worker.make_card({**event,"event_date":"{EVENT.DATE}"}))
-    assert "告警时间" not in unresolved
+    assert "发生时间" not in unresolved
+
+def test_recovery_duration_and_group_are_rendered():
+    event = {"event_id":"123456","event_value":"0","severity":"4",
+        "host_name":"C15-HX-M","host_groups":"Core/Switch",
+        "event_date":"2026.10.20","event_time":"10:00:00",
+        "recovery_date":"2026.10.20","recovery_time":"10:18:02",
+        "event_duration":"18m 02s"}
+    card=worker.make_card(event)
+    body=card["elements"][0]["text"]["content"]
+    assert card["header"]["template"]=="green"
+    assert "所属分组" in body and "Core/Switch" in body
+    assert "持续时间" in body and "18m 02s" in body
+    assert "恢复时间" in body and "10:18:02" in body
+    assert "故障原因" not in body
+
+def test_duration_calculated_when_macro_unresolved():
+    from app.worker import event_duration
+    assert event_duration({"event_date":"2026.10.20","event_time":"10:00:00",
+        "recovery_date":"2026.10.20","recovery_time":"10:03:27",
+        "event_duration":"{EVENT.DURATION}"})=="00:03:27"
