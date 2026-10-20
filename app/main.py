@@ -192,6 +192,17 @@ def list_mutes():
         rows=db.execute("SELECT host_id,trigger_id,created_at,expires_at FROM alert_mutes WHERE expires_at>? ORDER BY expires_at",(int(time.time()),)).fetchall()
     return [{"host_id":r[0],"trigger_id":r[1],"created_at":beijing_time(r[2]),"expires_at":r[3]} for r in rows]
 
+@app.delete("/api/v1/alert-mutes/{host_id}/{trigger_id}", dependencies=[Depends(require_admin)])
+def remove_mute(host_id: str, trigger_id: str):
+    if not host_id.isdigit() or not trigger_id.isdigit():
+        raise HTTPException(422, "invalid mute identity")
+    with connection() as db:
+        db.execute("DELETE FROM alert_mutes WHERE host_id=? AND trigger_id=?",(host_id,trigger_id))
+        db.execute("INSERT INTO audit(action,key) VALUES(?,?)",
+                   ("alert_unmute",host_id+":"+trigger_id))
+    return {"ok": True}
+
+
 @app.get("/api/v1/alert-stats", dependencies=[Depends(require_admin)])
 def alert_stats():
     with connection() as db:
