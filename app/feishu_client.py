@@ -2,10 +2,17 @@
 import json
 import logging
 import httpx
+from redis import Redis
+from .main import REDIS_URL
 from .main import read_setting
 from .text_safety import md_safe
 log = logging.getLogger(__name__)
 ROOT = "https://open.feishu.cn/open-apis"
+TOKEN_KEY = "zabbix-ai:feishu:tenant_token"
+_EXPIRED = {99991663, 99991661}
+
+def token_redis():
+    return Redis.from_url(REDIS_URL)
 
 def make_card(title, text, template="blue"):
     return {"config":{"wide_screen_mode":True,"update_multi":True},
@@ -13,18 +20,32 @@ def make_card(title, text, template="blue"):
             "elements":[{"tag":"div","text":{"tag":"lark_md","content":md_safe(text,11000)}}]}
 
 async def request(client, method, url, token=None, **kwargs):
-    headers = {"Authorization": "Bearer "+token} if token else {}
-    response = await client.request(method,url,headers=headers,**kwargs)
-    response.raise_for_status()
-    data = response.json()
+    async def _once(current_token):
+        headers = {"Authorization": "Bearer "+current_token} if current_token else {}
+        response = await client.request(method,url,headers=headers,**kwargs)
+        response.raise_for_status()
+        return response.json()
+    data = await _once(token)
+    if token and data.get("code") in _EXPIRED:
+        token_redis().delete(TOKEN_KEY)
+        token = await get_token(client)
+        data = await _once(token)
     if data.get("code",0) != 0:
-        raise RuntimeError("Feishu API error code=%s message=%s" % (data.get("code"),str(data.get("msg",""))[:120]))
+        raise RuntimeError("Feishu API error code=%s message=%s" %
+            (data.get("code"),str(data.get("msg",""))[:120]))
     return data
 
 async def get_token(client):
+    redis = token_redis()
+    cached = redis.get(TOKEN_KEY)
+    if cached:
+        return cached.decode()
     data = await request(client,"POST",ROOT+"/auth/v3/tenant_access_token/internal",
                          json={"app_id":read_setting("lark_app_id"),"app_secret":read_setting("lark_app_secret")})
-    return data["tenant_access_token"]
+    token = data["tenant_access_token"]
+    ttl = max(1,int(data.get("expire",7200))-300)
+    redis.set(TOKEN_KEY,token,ex=ttl)
+    return token
 
 async def send_card(chat_id,title,text,template="blue"):
     async with httpx.AsyncClient(timeout=30) as client:
