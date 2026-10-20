@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased — 第二轮修复
+
+- A7：飞书告警屏蔽卡片签名已改用 `mute-action-v1` 派生密钥；**旧卡片按钮将失效**，必须点击升级后新发送的告警卡片。
+
+
 ## Unreleased — P0 稳定性修复（2026-10-19）
 
 - 修复飞书 Webhook 签名字符串中的换行符问题，抽出 `feishu_sign`。
