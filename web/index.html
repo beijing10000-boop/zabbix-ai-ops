@@ -89,7 +89,7 @@ const configGroups=[
   {name:'AI 模型与提示词',keys:['openai_base_url','openai_model','openai_api_key','ai_alert_prompt','ai_qa_prompt']},
   {name:'Zabbix MCP',keys:['mcp_url','mcp_token',]},
   {name:'飞书与告警',keys:['lark_app_id','lark_app_secret','allowed_chat_ids','feishu_enabled','feishu_alert_chat_ids','zabbix_webhook_secret','ai_min_severity']},
-  {name:'审批与兼容配置',keys:['ai_approver_open_ids','min_severity','ai_prompt']}
+  {name:'兼容配置',keys:['min_severity','ai_prompt']}
 ];
 const labels={web_protocol:'Web 访问协议（http / https）',web_public_host:'Web 外部访问主机（例：172.20.200.93:8088）',openai_base_url:'AI API Base URL',openai_model:'AI 模型',openai_api_key:'AI API Key',mcp_url:'Zabbix MCP URL',mcp_token:'只读 MCP Token',lark_app_id:'飞书 App ID',lark_app_secret:'飞书 App Secret',allowed_chat_ids:'允许群聊 ID',feishu_enabled:'飞书通知开关（true/false）',feishu_alert_chat_ids:'企业应用告警群 Chat ID（逗号分隔；留空沿用允许群聊 ID）',zabbix_webhook_secret:'Zabbix Webhook 密钥',min_severity:'旧版最低告警等级（不再过滤通知）',ai_min_severity:'AI 分析最低级别（0–5，默认4=严重）',ai_alert_prompt:'告警分析提示词',ai_qa_prompt:'主动问答提示词',ai_prompt:'旧版提示词（兼容）'};
 const secrets=new Set(['openai_api_key','mcp_token','lark_app_secret','zabbix_webhook_secret']);
