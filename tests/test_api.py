@@ -92,3 +92,18 @@ def test_ai_question_metrics_separate_from_alerts():
     assert len(found) == 1 and found[0]["status"] == "success"
     assert found[0]["source"] == "feishu"
     assert client.get("/api/v1/qa-events").status_code == 401
+
+def test_read_settings_cache_limits_connections(monkeypatch):
+    from app import main
+    main.clear_settings_cache()
+    main.init_db()
+    calls=0
+    original=main.sqlite3.connect
+    def count(*args,**kwargs):
+        nonlocal calls
+        calls+=1
+        return original(*args,**kwargs)
+    monkeypatch.setattr(main.sqlite3,"connect",count)
+    for _ in range(100):
+        assert main.read_setting("ai_min_severity") is not None
+    assert calls<=2
