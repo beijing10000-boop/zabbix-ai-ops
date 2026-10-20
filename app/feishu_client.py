@@ -3,13 +3,14 @@ import json
 import logging
 import httpx
 from .main import read_setting
+from .text_safety import md_safe
 log = logging.getLogger(__name__)
 ROOT = "https://open.feishu.cn/open-apis"
 
 def make_card(title, text, template="blue"):
     return {"config":{"wide_screen_mode":True,"update_multi":True},
             "header":{"title":{"tag":"plain_text","content":title},"template":template},
-            "elements":[{"tag":"div","text":{"tag":"lark_md","content":str(text)[:11000]}}]}
+            "elements":[{"tag":"div","text":{"tag":"lark_md","content":md_safe(text,11000)}}]}
 
 async def request(client, method, url, token=None, **kwargs):
     headers = {"Authorization": "Bearer "+token} if token else {}
