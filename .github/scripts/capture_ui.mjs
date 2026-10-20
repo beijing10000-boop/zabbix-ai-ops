@@ -23,8 +23,10 @@ function response(url){
 let failed=false;
 for(const mode of ['light','dark']){
  for(const width of [1440,375]){
-  const page=await browser.newPage({viewport:{width,height:width===1440?900:812},colorScheme:mode,deviceScaleFactor:1});
+  const context=await browser.newContext({viewport:{width,height:width===1440?900:812},colorScheme:mode,deviceScaleFactor:1});
+  const page=await context.newPage();
   const exceptions=[];page.on('pageerror',e=>exceptions.push(e.message));
+  await page.route('**/healthz',async route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({ok:true,version:'0.2.0'})}));
   await page.route('**/api/v1/**',async route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(response(route.request().url()))}));
   await page.goto(base+'/',{waitUntil:'networkidle'});
   await page.waitForSelector('.metric-card',{timeout:15000});
@@ -36,7 +38,7 @@ for(const mode of ['light','dark']){
   const issues=accessibility.violations.filter(v=>['serious','critical'].includes(v.impact));
   if(issues.length){console.error('A11y issues',mode,width,JSON.stringify(issues.map(v=>({id:v.id,nodes:v.nodes.length,impact:v.impact}))));failed=true}
   console.log(mode,width,'rendered',dims,issues.length);
-  await page.close();
+  await context.close();
  }
 }
 await browser.close();
