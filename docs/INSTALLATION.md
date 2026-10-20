@@ -4,7 +4,7 @@
 
 ## 安装
 
-准备 Docker Engine、Docker Compose、具有私有仓库访问权限的 GitHub 登录。
+准备 Docker Engine、Docker Compose 和项目仓库访问权限。
 
 ```bash
 git clone https://github.com/beijing10000-boop/zabbix-ai-ops.git
@@ -13,7 +13,7 @@ python3 -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().
 python3 -c 'import secrets; print(secrets.token_urlsafe(40))'
 ```
 
-将两段随机输出分别配置为 `APP_ENCRYPTION_KEY` 和 `ADMIN_API_TOKEN`，写入本地 `.env`（权限 `chmod 600 .env`）。禁止上传仓库或发送到聊天中。
+将两段随机输出分别配置为 `APP_ENCRYPTION_KEY`（旧版 `ADMIN_API_TOKEN` 可以留空），写入本地 `.env`（权限 `chmod 600 .env`）。禁止上传仓库或发送到聊天中。
 
 ```bash
 docker compose up -d --build
@@ -21,7 +21,7 @@ docker compose ps
 curl -f http://127.0.0.1:8088/healthz
 ```
 
-Web 仅映射到宿主机 `127.0.0.1:8088`；通过 SSH 隧道或受信任 HTTPS 反向代理访问，输入管理 Token。配置 MCP、OpenAI/Azure 模型、飞书 App ID/Secret、群白名单和告警 Webhook。
+Web 默认仅映射到宿主机 `127.0.0.1:8088`；通过 SSH 隧道或受信任 HTTPS 反向代理访问，使用飞书 OAuth 管理员账号登录。配置 MCP、OpenAI/Azure 模型、飞书 App ID/Secret、群白名单和告警 Webhook。
 
 ## 服务
 

@@ -146,7 +146,7 @@ def test_zabbix_event_deep_link(monkeypatch):
     card=worker.make_card(event)
     body=card["elements"][0]["text"]["content"]
     assert "[查看 Zabbix 告警 ↗](https://zabbix.example.internal/tr_events.php?triggerid=102345&eventid=6057922)" in body
-    assert "172.20.200.93 转发" not in body
+    assert "aiops.example.internal 转发" not in body
     recovery=worker.make_card({**event,"event_value":"0"})
     assert "eventid=6057922" in recovery["elements"][0]["text"]["content"]
     no_id=worker.make_card({**event,"trigger_id":"{TRIGGER.ID}"})
