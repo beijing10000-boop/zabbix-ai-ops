@@ -39,6 +39,10 @@ def on_message(data: P2ImMessageReceiveV1):
     sender_id = getattr(getattr(sender,"sender_id",None),"open_id",None)
     if not sender_id:
         return
+    key="feishu-ai:message:"+msg_id
+    if not redis.set(key,"queued",nx=True,ex=86400):
+        log.info("FEISHU_DUPLICATE message_id=%s",msg_id)
+        return
     minute = int(time.time() // 60)
     day = int(time.time() // 86400)
     user_key = f"zabbix-ai:rate:feishu:user:{sender_id}:{minute}"
@@ -50,13 +54,9 @@ def on_message(data: P2ImMessageReceiveV1):
         pipe.expire(group_key, 172800)
         limits = pipe.execute()
     if limits[0] > 5 or limits[2] > 300:
+        redis.delete(key)
         log.warning("FEISHU_QA_RATE_LIMITED message_id=%s", msg_id)
         return
-    key="feishu-ai:message:"+msg_id
-    if not redis.set(key,"queued",nx=True,ex=86400):
-        log.info("FEISHU_DUPLICATE message_id=%s",msg_id)
-        return
-    sender_id = getattr(getattr(sender,"sender_id",None),"open_id",None)
     parent_id = getattr(message,"parent_id",None)
     root_id = getattr(message,"root_id",None)
     try:
