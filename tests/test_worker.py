@@ -147,7 +147,7 @@ def test_zabbix_event_deep_link():
     assert "事件来源" in body and "Zabbix" in body
     assert "ai-ops.example.internal 转发" not in body
     recovery=worker.make_card({**event,"event_value":"0"})
-    assert "eventid=6057922" in recovery["elements"][0]["text"]["content"]
+    assert "事件来源**  Zabbix" in recovery["elements"][0]["text"]["content"]
     no_id=worker.make_card({**event,"trigger_id":"{TRIGGER.ID}"})
     assert "tr_events.php" not in str(no_id)
 
