@@ -147,7 +147,7 @@ def update_settings(body: SettingsUpdate):
     if "feishu_admin_open_ids" in body.values:
         import re
         ids = [v.strip() for v in body.values["feishu_admin_open_ids"].split(",") if v.strip()]
-        if len(ids) > 100 or any(not re.fullmatch(r"ou_[A-Za-z0-9_-]{2,128}", v) for v in ids):
+        if not ids or len(ids) > 100 or any(not re.fullmatch(r"ou_[A-Za-z0-9_-]{2,128}", v) for v in ids):
             raise HTTPException(status_code=422, detail="飞书管理员 Open ID 格式错误（应为 ou_ 开头，多个用英文逗号分隔）")
     with connection() as db:
         for key, val in body.values.items():
