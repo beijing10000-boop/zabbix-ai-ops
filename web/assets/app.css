@@ -147,3 +147,11 @@ input,textarea,select{background:var(--bg-elevated);color:var(--label);border-co
 .debug-group button{min-width:58px}.hidden{display:none!important}
 [hidden]{display:none!important}
 @media(max-width:899px){.debug-group .grouped-row{padding:10px 8px;gap:5px}.debug-result{font-size:11px}.debug-group button{min-width:52px}}
+
+/* WCAG touch targets: visible track remains 51×31, clickable button is 51×44. */
+.toggle{height:44px;min-height:44px;background:transparent!important}
+.toggle::before{content:"";position:absolute;left:0;top:6.5px;width:51px;height:31px;border-radius:999px;background:var(--fill);transition:background var(--dur) var(--ease)}
+.toggle.on::before{background:var(--green)}
+.toggle::after{top:8.5px}
+.segmented button,.setting-action,.text-danger,.grouped-row button,.sheet-overlay .sheet button{min-height:44px}
+@media(prefers-reduced-motion:reduce){.drawer.show{animation:none!important}}

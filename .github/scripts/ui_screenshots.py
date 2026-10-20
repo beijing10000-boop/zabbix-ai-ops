@@ -52,7 +52,14 @@ with sync_playwright() as p:
             dimensions = page.evaluate("({width:document.documentElement.scrollWidth,view:innerWidth})")
             assert page.locator("button[data-page='mutes']").count() == 1
             assert "script-src 'self'" in page.goto(BASE).headers.get("content-security-policy", "")
+            if width == 375:
+                bottom = page.locator(".side").bounding_box()
+                assert bottom is not None
+                assert abs(bottom["y"] + bottom["height"] - height) <= 2, "Mobile tab bar must be bottom fixed"
             page.locator("button[data-page='config']").click()
+            toggle_box = page.locator("button[role=switch]").bounding_box()
+            assert toggle_box and toggle_box["height"] >= 44 and toggle_box["width"] >= 44
+
             page.locator("#field-feishu_enabled").wait_for(state="attached")
             assert page.locator("button[role=switch]").count() == 1
             page.locator("button[data-page='mutes']").click()
