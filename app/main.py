@@ -51,6 +51,9 @@ def connection():
             error_type TEXT,
             UNIQUE(source,request_id)
         )""")
+        columns = {row[1] for row in db.execute("PRAGMA table_info(alert_events)")}
+        if "event_json" not in columns:
+            db.execute("ALTER TABLE alert_events ADD COLUMN event_json TEXT")
         db.execute("CREATE INDEX IF NOT EXISTS ix_ai_questions_created ON ai_questions(id DESC)")
         db.execute("DELETE FROM settings WHERE key IN ('write_enabled','write_mcp_url','write_mcp_token','ai_approver_open_ids')")
         db.execute("CREATE TABLE IF NOT EXISTS alert_mutes (host_id TEXT NOT NULL,trigger_id TEXT NOT NULL,expires_at INTEGER NOT NULL,created_at TEXT DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY(host_id,trigger_id))")
@@ -387,8 +390,8 @@ def ingest(alert: Alert, authorization: str | None = Header(default=None)):
     try:
         ai_pending = alert.event_value == "1" and severity >= int(read_setting("ai_min_severity") or "4")
         with connection() as db:
-            db.execute("""INSERT OR IGNORE INTO alert_events(event_id,event_value,event_name,host_name,severity,ai_status) VALUES(?,?,?,?,?,?)""",
-                       (alert.event_id,alert.event_value,alert.event_name,alert.host_name,severity,"pending" if ai_pending else "not_required"))
+            db.execute("""INSERT OR IGNORE INTO alert_events(event_id,event_value,event_name,host_name,severity,ai_status,event_json) VALUES(?,?,?,?,?,?,?)""",
+                       (alert.event_id,alert.event_value,alert.event_name,alert.host_name,severity,"pending" if ai_pending else "not_required",json.dumps(alert.model_dump(),ensure_ascii=False)))
         job = Queue("ai-alerts", connection=redis).enqueue("app.worker.process_alert", alert.model_dump(), job_timeout=360)
     except Exception:
         redis.delete(key)
