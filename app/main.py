@@ -5,6 +5,9 @@ import json
 import os
 import secrets
 import sqlite3
+import threading
+import time
+from functools import lru_cache
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 SHANGHAI = ZoneInfo("Asia/Shanghai")
@@ -27,46 +30,90 @@ SENSITIVE = {"openai_api_key", "mcp_token", "lark_app_secret", "zabbix_webhook_s
 ALLOWED = SENSITIVE | {"openai_base_url", "openai_model", "mcp_url", "lark_app_id", "allowed_chat_ids", "min_severity", "ai_min_severity", "ai_prompt", "ai_alert_prompt", "ai_qa_prompt", "feishu_enabled", "web_protocol", "web_public_host", "feishu_alert_chat_ids"}
 DEFAULTS = {"min_severity": "3", "ai_min_severity": "4", "feishu_enabled": "false", "web_protocol": "http"}
 
+@lru_cache(maxsize=1)
 def cipher():
     if not MASTER_KEY:
         raise RuntimeError("APP_ENCRYPTION_KEY must be configured")
     return Fernet(MASTER_KEY.encode())
 
+_db_lock = threading.Lock()
+_db_ready = False
+_settings_cache = None
+_settings_deadline = 0.0
+_settings_lock = threading.Lock()
+
+def init_db():
+    """One-time schema and migration work per process, not per read."""
+    global _db_ready
+    if _db_ready:
+        return
+    with _db_lock:
+        if _db_ready:
+            return
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+        db = sqlite3.connect(DB, timeout=20)
+        try:
+            db.execute("PRAGMA journal_mode=WAL")
+            db.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, secret INTEGER NOT NULL)")
+            db.execute("CREATE TABLE IF NOT EXISTS audit (id INTEGER PRIMARY KEY AUTOINCREMENT, action TEXT, key TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP)")
+            db.execute("""CREATE TABLE IF NOT EXISTS alert_events (id INTEGER PRIMARY KEY AUTOINCREMENT, event_id TEXT NOT NULL, event_value TEXT NOT NULL, event_name TEXT, host_name TEXT, severity INTEGER, received_at TEXT DEFAULT CURRENT_TIMESTAMP, notify_status TEXT DEFAULT 'queued', ai_status TEXT DEFAULT 'not_required', UNIQUE(event_id,event_value))""")
+            db.execute("""CREATE TABLE IF NOT EXISTS ai_questions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                source TEXT NOT NULL,
+                request_id TEXT NOT NULL,
+                question TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                completed_at TEXT,
+                error_type TEXT,
+                UNIQUE(source,request_id)
+            )""")
+            db.execute("CREATE INDEX IF NOT EXISTS ix_ai_questions_created ON ai_questions(id DESC)")
+            db.execute("DELETE FROM settings WHERE key IN ('write_enabled','write_mcp_url','write_mcp_token','ai_approver_open_ids')")
+            db.execute("CREATE TABLE IF NOT EXISTS alert_mutes (host_id TEXT NOT NULL,trigger_id TEXT NOT NULL,expires_at INTEGER NOT NULL,created_at TEXT DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY(host_id,trigger_id))")
+
+            db.execute("CREATE TABLE IF NOT EXISTS oauth_states (state_hash TEXT PRIMARY KEY, expires INTEGER NOT NULL)")
+            db.execute("""CREATE TABLE IF NOT EXISTS admin_sessions (
+                token_hash TEXT PRIMARY KEY, open_id TEXT NOT NULL, name TEXT NOT NULL,
+                csrf TEXT NOT NULL, expires INTEGER NOT NULL)""")
+            db.commit()
+            _db_ready = True
+        finally:
+            db.close()
+
 @contextmanager
 def connection():
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    init_db()
     db = sqlite3.connect(DB, timeout=20)
     try:
-        db.execute("PRAGMA journal_mode=WAL")
-        db.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, secret INTEGER NOT NULL)")
-        db.execute("CREATE TABLE IF NOT EXISTS audit (id INTEGER PRIMARY KEY AUTOINCREMENT, action TEXT, key TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP)")
-        db.execute("""CREATE TABLE IF NOT EXISTS alert_events (id INTEGER PRIMARY KEY AUTOINCREMENT, event_id TEXT NOT NULL, event_value TEXT NOT NULL, event_name TEXT, host_name TEXT, severity INTEGER, received_at TEXT DEFAULT CURRENT_TIMESTAMP, notify_status TEXT DEFAULT 'queued', ai_status TEXT DEFAULT 'not_required', UNIQUE(event_id,event_value))""")
-        db.execute("""CREATE TABLE IF NOT EXISTS ai_questions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            source TEXT NOT NULL,
-            request_id TEXT NOT NULL,
-            question TEXT NOT NULL,
-            status TEXT NOT NULL DEFAULT 'pending',
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-            completed_at TEXT,
-            error_type TEXT,
-            UNIQUE(source,request_id)
-        )""")
-        db.execute("CREATE INDEX IF NOT EXISTS ix_ai_questions_created ON ai_questions(id DESC)")
-        db.execute("DELETE FROM settings WHERE key IN ('write_enabled','write_mcp_url','write_mcp_token','ai_approver_open_ids')")
-        db.execute("CREATE TABLE IF NOT EXISTS alert_mutes (host_id TEXT NOT NULL,trigger_id TEXT NOT NULL,expires_at INTEGER NOT NULL,created_at TEXT DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY(host_id,trigger_id))")
-        db.commit()
         yield db
         db.commit()
     finally:
         db.close()
 
+def clear_settings_cache():
+    global _settings_cache, _settings_deadline
+    with _settings_lock:
+        _settings_cache = None
+        _settings_deadline = 0.0
+
+def read_all_settings():
+    global _settings_cache, _settings_deadline
+    now = time.monotonic()
+    if _settings_cache is not None and now < _settings_deadline:
+        return _settings_cache
+    with _settings_lock:
+        now = time.monotonic()
+        if _settings_cache is None or now >= _settings_deadline:
+            with connection() as db:
+                rows = db.execute("SELECT key,value,secret FROM settings").fetchall()
+            _settings_cache = {k: cipher().decrypt(v.encode()).decode() if secret else v
+                               for k,v,secret in rows}
+            _settings_deadline = time.monotonic() + 15
+        return _settings_cache
+
 def read_setting(key):
-    with connection() as db:
-        row = db.execute("SELECT value, secret FROM settings WHERE key=?", (key,)).fetchone()
-    if not row:
-        return DEFAULTS.get(key, "")
-    return cipher().decrypt(row[0].encode()).decode() if row[1] else row[0]
+    return read_all_settings().get(key, DEFAULTS.get(key,""))
 
 def beijing_time(value):
     """Convert SQLite UTC CURRENT_TIMESTAMP fields for API presentation."""
