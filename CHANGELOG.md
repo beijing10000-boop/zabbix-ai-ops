@@ -19,3 +19,10 @@
 - Initialized private development repository from available prior generated materials.
 - Added Feishu QA progress-card adapter and initial operational documentation.
 - No production release has been tagged.
+
+# Changelog
+
+## 2026-10-20 — A7
+
+- 飞书告警屏蔽卡片签名改为基于 `APP_ENCRYPTION_KEY` 派生的专用 `mute-action-v1` HMAC 密钥，避免与其他用途复用。
+- **兼容性提示**：更新之前发送的卡片按钮签名会失效。请使用升级后新收到的告警卡片进行屏蔽操作。

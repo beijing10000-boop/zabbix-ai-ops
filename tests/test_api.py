@@ -36,6 +36,7 @@ def test_ask_validation():
     assert client.post("/api/v1/ask", headers=h, json={"question":"x"*3001}).status_code == 422
 
 def test_web_ask_calls_read_only_agent(monkeypatch):
+    monkeypatch.setattr("app.rate_limit.permit",lambda *args:True)
     from app import ai_agent
     async def fake_ask(question):
         assert question == "查询严重告警"
