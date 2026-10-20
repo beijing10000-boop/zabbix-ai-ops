@@ -37,7 +37,7 @@ def test_http_callback_is_default_and_url_is_validated(monkeypatch):
     from app.feishu_auth import _redirect_uri, _secure_cookie
     from fastapi import HTTPException
     import pytest
-    from app.main import connection
+    from app.main import connection, invalidate_settings_cache
     with connection() as db:
         db.execute("DELETE FROM settings WHERE key IN ('web_protocol','web_public_host')")
     monkeypatch.setenv("FEISHU_LOGIN_REDIRECT_URI","http://example.internal:8088/api/v1/auth/callback")
@@ -52,7 +52,7 @@ def test_http_callback_is_default_and_url_is_validated(monkeypatch):
 
 def test_default_http_and_ui_https_switch(monkeypatch):
     from app import feishu_auth
-    from app.main import connection
+    from app.main import connection, invalidate_settings_cache
     monkeypatch.setenv("FEISHU_LOGIN_REDIRECT_URI","http://example.internal:8088/api/v1/auth/callback")
     with connection() as db:
         db.execute("DELETE FROM settings WHERE key IN ('web_protocol','web_public_host')")

@@ -1,7 +1,7 @@
 """Feishu lark_md content sanitization (not an HTML sanitizer)."""
 import re
 
-_AT_TAG = re.compile(r"</?at(?:\\s+[^<>]*?)?\\s*/?>", re.IGNORECASE)
+_AT_TAG = re.compile(r"</?at(?:\s+[^<>]*?)?\s*/?>", re.IGNORECASE)
 
 def md_safe(text, limit):
     """Remove Feishu mention tags, neutralize angle brackets, then truncate."""
