@@ -76,6 +76,18 @@ def event_duration(event):
         return ""
 
 
+def zabbix_event_link(event):
+    """Link only to a validated event/trigger pair; never accept arbitrary URLs."""
+    event_id = str(event.get("event_id") or "")
+    trigger_id = str(event.get("trigger_id") or "")
+    if not (event_id.isdigit() and trigger_id.isdigit()):
+        return ""
+    # Internal Zabbix 7.4 frontend currently runs on port 8080.
+    from urllib.parse import urlencode
+    base = os.getenv("ZABBIX_FRONTEND_URL", "http://172.20.200.90:8080").rstrip("/")
+    return base + "/tr_events.php?" + urlencode({"triggerid": trigger_id, "eventid": event_id})
+
+
 def make_card(event, info=None, *, analysis=False):
     """Mobile-friendly, compact ops event; separate rich severe AI analysis."""
     info = info or {}
@@ -111,8 +123,12 @@ def make_card(event, info=None, *, analysis=False):
     lines.extend([
         "**事件名称**  " + safe(event_name, 250),
         "**事件 ID**  " + safe(event.get("event_id"), 40),
-        "**事件来源**  172.20.200.93 转发",
     ])
+    link = zabbix_event_link(event)
+    if link:
+        lines.append("**事件来源**  [查看 Zabbix 告警 ↗](" + link + ")")
+    else:
+        lines.append("**事件来源**  Zabbix")
     elements = [
         {"tag":"div", "text":{"tag":"lark_md", "content":"\n".join(lines)}}
     ]
