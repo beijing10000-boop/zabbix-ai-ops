@@ -85,8 +85,8 @@ def zabbix_event_link(event):
         return ""
     # Internal Zabbix 7.4 frontend currently runs on port 8080.
     from urllib.parse import urlencode
-    base = os.getenv("ZABBIX_FRONTEND_URL", "http://172.20.200.90:8080").rstrip("/")
-    return base + "/tr_events.php?" + urlencode({"triggerid": trigger_id, "eventid": event_id})
+    base = os.getenv("ZABBIX_FRONTEND_URL", "").rstrip("/")
+    return (base + "/tr_events.php?" + urlencode({"triggerid": trigger_id, "eventid": event_id})) if base else ""
 
 
 def make_card(event, info=None, *, analysis=False):

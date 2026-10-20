@@ -288,7 +288,7 @@ def logs_overview():
     result={"failed_jobs":[], "queues":{}, "note":"详细容器日志请使用 docker compose logs 查看"}
     try:
         redis=Redis.from_url(REDIS_URL,socket_connect_timeout=3,socket_timeout=5)
-        for name in ("ai-alerts","ai-questions","ai-changes"):
+        for name in ("ai-alerts","ai-questions"):
             queue=Queue(name,connection=redis)
             result["queues"][name]={"queued":len(queue),
                                      "failed":len(FailedJobRegistry(name,connection=redis))}
