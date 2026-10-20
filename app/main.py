@@ -380,9 +380,12 @@ async def test_ai_model():
 
 
 @app.post("/api/v1/ask", dependencies=[Depends(require_admin)])
-async def ask_web(body: AskRequest):
+async def ask_web(body: AskRequest, admin=Depends(require_admin)):
     """Use the same read-only MCP agent as Feishu; never expose write tools."""
     from .ai_agent import ask
+    from .rate_limit import allow
+    if not allow("web:"+admin["open_id"],5,60):
+        raise HTTPException(status_code=429,detail="请求过于频繁，请一分钟后重试")
     import uuid
     request_id = uuid.uuid4().hex
     record_ai_question("web", request_id, body.question, "running")

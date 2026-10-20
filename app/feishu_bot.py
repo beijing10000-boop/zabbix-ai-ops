@@ -9,6 +9,7 @@ from lark_oapi.api.im.v1 import P2ImMessageReceiveV1
 from lark_oapi.event.callback.model.p2_card_action_trigger import P2CardActionTrigger, P2CardActionTriggerResponse
 from .alert_mute import handle_mute_action
 from .main import read_setting, REDIS_URL
+from .rate_limit import allow
 
 log = logging.getLogger(__name__)
 redis = Redis.from_url(REDIS_URL)
@@ -35,11 +36,14 @@ def on_message(data: P2ImMessageReceiveV1):
     if not question:
         log.info("FEISHU_FILTERED reason=empty_question message_id=%s",msg_id)
         return
+    sender_id = getattr(getattr(sender,"sender_id",None),"open_id",None)
+    if not sender_id or not allow("user:"+sender_id,5,60) or not allow("group:"+message.chat_id,300,86400):
+        log.warning("FEISHU_RATE_LIMITED message_id=%s",msg_id)
+        return
     key="feishu-ai:message:"+msg_id
     if not redis.set(key,"queued",nx=True,ex=86400):
         log.info("FEISHU_DUPLICATE message_id=%s",msg_id)
         return
-    sender_id = getattr(getattr(sender,"sender_id",None),"open_id",None)
     parent_id = getattr(message,"parent_id",None)
     root_id = getattr(message,"root_id",None)
     try:
