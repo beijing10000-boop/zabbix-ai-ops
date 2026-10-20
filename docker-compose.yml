@@ -40,13 +40,6 @@ services:
     environment: *app-env
     volumes: [appdata:/app/data]
     depends_on: [redis]
-  change-worker:
-    build: .
-    command: ["python","-m","app.change_worker"]
-    restart: unless-stopped
-    environment: *app-env
-    volumes: [appdata:/app/data]
-    depends_on: [redis]
   feishu-receiver:
     build: .
     command: ["python","-m","app.feishu_bot"]
