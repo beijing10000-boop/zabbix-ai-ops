@@ -8,7 +8,8 @@ from rq import Worker, Queue
 from .ai_agent import ask
 from .alert_context import resolve_replied_event
 from .conversation_context import remember, recall, format_context
-from .change_approval import request_change, consume_decision
+from .change_approval import request_change, consume_decision, admin_ids
+from .natural_change import parse_ack_request, resolve_change
 from .feishu_client import reply_card, send_card, update_card, send_text
 
 log = logging.getLogger(__name__)
@@ -19,6 +20,25 @@ async def execute(chat_id, question, message_id, sender_open_id=None, parent_id=
     action = consume_decision(question, sender_open_id, chat_id)
     if action is None:
         action = request_change(question, sender_open_id, chat_id)
+    if action is None:
+        stored_for_change = recall(chat_id, parent_id) or (recall(chat_id, root_id)
+            if root_id and root_id != parent_id else None)
+        parsed = parse_ack_request(question, stored_for_change)
+        if parsed is not None:
+            if sender_open_id not in admin_ids():
+                action = "无权限：只有配置的审批管理员能够申请确认告警。"
+            elif "error" in parsed:
+                action = parsed["error"]
+            else:
+                found = await resolve_change(question, stored_for_change)
+                if "error" in found:
+                    action = found["error"]
+                else:
+                    approval = request_change("确认告警 " + found["event_id"],
+                                              sender_open_id, chat_id)
+                    action = ("**确认目标**\\n主机：" + found["host"] +
+                        "\\n事件：" + found["name"] + "\\n事件 ID：" +
+                        found["event_id"] + "\\n\\n" + approval)
     if action is not None:
         await reply_card(message_id, "Zabbix 变更审批" if read_setting("write_enabled") == "true" else "Zabbix 变更审批（模拟）", action, "orange")
         log.info("FEISHU_APPROVAL_HANDLED message_id=%s", message_id)
