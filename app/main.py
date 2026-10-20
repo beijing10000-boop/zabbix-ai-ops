@@ -139,6 +139,38 @@ def update_settings(body: SettingsUpdate):
             db.execute("INSERT INTO audit(action,key) VALUES(?,?)", ("settings_update", key))
     return {"ok": True}
 
+def record_ai_question(source, request_id, question, status="pending", error_type=None):
+    if source not in ("feishu", "web") or status not in ("pending", "running", "success", "failed"):
+        raise ValueError("invalid question metrics")
+    with connection() as db:
+        db.execute("""INSERT INTO ai_questions (source,request_id,question,status,error_type,completed_at)
+            VALUES (?,?,?,?,?,CASE WHEN ? IN ('success','failed') THEN CURRENT_TIMESTAMP ELSE NULL END)
+            ON CONFLICT(source,request_id) DO UPDATE SET
+            status=excluded.status, error_type=excluded.error_type,
+            completed_at=excluded.completed_at""",
+            (source,str(request_id)[:120],str(question)[:500],status,error_type,status))
+
+
+@app.get("/api/v1/qa-stats", dependencies=[Depends(require_admin)])
+def qa_stats():
+    with connection() as db:
+        rows=db.execute("SELECT status, COUNT(*) FROM ai_questions GROUP BY status").fetchall()
+    d=dict(rows)
+    return {"total":sum(d.values()),"pending":d.get("pending",0),
+            "running":d.get("running",0),"success":d.get("success",0),"failed":d.get("failed",0)}
+
+
+@app.get("/api/v1/qa-events", dependencies=[Depends(require_admin)])
+def qa_events(limit:int=100,offset:int=0):
+    with connection() as db:
+        rows=db.execute("""SELECT source,request_id,question,status,created_at,completed_at,error_type
+            FROM ai_questions ORDER BY id DESC LIMIT ? OFFSET ?""",
+            (min(max(limit,1),200),max(offset,0))).fetchall()
+    return [{"source":r[0],"request_id":r[1],"question":r[2],"status":r[3],
+             "created_at":beijing_time(r[4]),"completed_at":beijing_time(r[5]),
+             "error_type":r[6]} for r in rows]
+
+
 class MuteRequest(BaseModel):
     host_id: str = Field(pattern=r"^[0-9]{1,20}$")
     trigger_id: str = Field(pattern=r"^[0-9]{1,20}$")
