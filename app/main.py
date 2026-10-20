@@ -85,6 +85,9 @@ class Alert(BaseModel):
     event_time: str = ""
     recovery_date: str = ""
     recovery_time: str = ""
+    recovery_value: str = ""
+    event_duration: str = ""
+    recovery_id: str = ""
     host_id: str = ""
     host_ip: str = ""
     trigger_id: str = ""
@@ -321,7 +324,13 @@ def ingest(alert: Alert, authorization: str | None = Header(default=None)):
     secret = read_setting("zabbix_webhook_secret")
     if not secret or not authorization or not hmac.compare_digest(authorization, "Bearer " + secret):
         raise HTTPException(status_code=401, detail="unauthorized")
-    # Receive both PROBLEM and recovery events of all severities.
+    # Zabbix recovery operations retain original {EVENT.VALUE}=1.
+    # Prefer the dedicated recovery macro when present and resolved.
+    resolved_recovery = alert.recovery_value == "0" or (
+        alert.recovery_id.isdigit() and bool(alert.recovery_id)
+    )
+    if resolved_recovery:
+        alert.event_value = "0"
     if alert.event_source != "0" or alert.event_value not in ("0", "1"):
         return {"status": "skipped", "reason": "unsupported event type"}
     try:
