@@ -38,6 +38,36 @@ def connection():
     try:
         db.execute("PRAGMA journal_mode=WAL")
         db.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, secret INTEGER NOT NULL)")
+        # One-time migration of the legacy admin allowlist. Runtime authorization
+        # only ever reads the Web-managed settings table.
+        legacy_admins = os.getenv("FEISHU_ADMIN_OPEN_IDS", "").strip()
+        migrated = db.execute("SELECT 1 FROM settings WHERE key='feishu_admin_migration_done'").fetchone()
+        if not migrated:
+            if legacy_admins and not db.execute(
+                "SELECT 1 FROM settings WHERE key='feishu_admin_open_ids'"
+            ).fetchone():
+                db.execute("INSERT INTO settings(key,value,secret) VALUES ('feishu_admin_open_ids',?,0)",
+                           (legacy_admins,))
+            db.execute("INSERT INTO settings(key,value,secret) VALUES ('feishu_admin_migration_done','1',0)")
+
+        # Import legacy redirect configuration only once, then use Web settings.
+        from urllib.parse import urlsplit
+        redirect_migrated = db.execute("SELECT 1 FROM settings WHERE key='redirect_migration_done'").fetchone()
+        if not redirect_migrated:
+            legacy_uri = os.getenv("FEISHU_LOGIN_REDIRECT_URI", "").strip()
+            legacy_host = os.getenv("WEB_PUBLIC_HOST", "").strip()
+            legacy_scheme = os.getenv("WEB_PROTOCOL", "").strip()
+            if legacy_uri:
+                parts = urlsplit(legacy_uri)
+                if (parts.scheme in ("http", "https") and parts.netloc and
+                        parts.path == "/api/v1/auth/callback" and not parts.query and
+                        not parts.fragment and not parts.username and not parts.password):
+                    legacy_host = legacy_host or parts.netloc
+                    legacy_scheme = legacy_scheme or parts.scheme
+            for key, val in (("web_public_host", legacy_host), ("web_protocol", legacy_scheme)):
+                if val and not db.execute("SELECT 1 FROM settings WHERE key=?", (key,)).fetchone():
+                    db.execute("INSERT INTO settings(key,value,secret) VALUES (?, ?, 0)", (key, val))
+            db.execute("INSERT INTO settings(key,value,secret) VALUES ('redirect_migration_done','1',0)")
         db.execute("CREATE TABLE IF NOT EXISTS audit (id INTEGER PRIMARY KEY AUTOINCREMENT, action TEXT, key TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP)")
         db.execute("""CREATE TABLE IF NOT EXISTS alert_events (id INTEGER PRIMARY KEY AUTOINCREMENT, event_id TEXT NOT NULL, event_value TEXT NOT NULL, event_name TEXT, host_name TEXT, severity INTEGER, received_at TEXT DEFAULT CURRENT_TIMESTAMP, notify_status TEXT DEFAULT 'queued', ai_status TEXT DEFAULT 'not_required', UNIQUE(event_id,event_value))""")
         db.execute("""CREATE TABLE IF NOT EXISTS ai_questions (
@@ -135,7 +165,7 @@ def update_settings(body: SettingsUpdate):
     if "feishu_admin_open_ids" in body.values:
         import re
         ids = [v.strip() for v in body.values["feishu_admin_open_ids"].split(",") if v.strip()]
-        if len(ids) > 100 or any(not re.fullmatch(r"ou_[A-Za-z0-9_-]{2,128}", v) for v in ids):
+        if not ids or len(ids) > 100 or any(not re.fullmatch(r"ou_[A-Za-z0-9_-]{2,128}", v) for v in ids):
             raise HTTPException(status_code=422, detail="飞书管理员 Open ID 格式错误（应为 ou_ 开头，多个用英文逗号分隔）")
     with connection() as db:
         for key, val in body.values.items():
