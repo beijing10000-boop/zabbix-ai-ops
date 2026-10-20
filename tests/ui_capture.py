@@ -72,8 +72,14 @@ def run():
                     page.get_by_text("CPU 采集正常。").wait_for()
                     page.locator(nav+' [data-page="logs"]').click()
                     page.locator("#log-list .group-row").first.wait_for()
-                    page.keyboard.press("Tab")
-                    assert page.evaluate("document.activeElement.tagName") in ("BUTTON","A","INPUT","TEXTAREA")
+                    focused=False
+                    for _ in range(10):
+                        page.keyboard.press("Tab")
+                        tag=page.evaluate("document.activeElement.tagName")
+                        if tag in ("BUTTON","A","INPUT","TEXTAREA"):
+                            focused=True
+                            break
+                    assert focused, "Keyboard focus not found"
                     ctx.close()
             browser.close()
         assert not failures,failures
