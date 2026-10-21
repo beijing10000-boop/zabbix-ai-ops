@@ -114,7 +114,7 @@ async def run(prompt, question, *, client=None, model=None, context="", return_u
                 from .main import connection
                 source = "alert" if question.lstrip().startswith('{"alert":') else "qa"
                 with connection() as db:
-                    db.execute("""INSERT INTO ai_cost_runs
+                    db.execute("""INSERT INTO ai_token_runs
                         (source,model,profile,token_input,token_output,token_total,rounds,tools,result_chars,details)
                         VALUES (?,?,?,?,?,?,?,?,?,?)""",
                         (source,str(model)[:120],profile_name,
@@ -125,7 +125,7 @@ async def run(prompt, question, *, client=None, model=None, context="", return_u
                          executed,sum(d.get("chars",0) for d in telemetry if d.get("kind")=="tool"),
                          json.dumps(telemetry,ensure_ascii=False)))
             except Exception:
-                log.exception("AI_COST_TELEMETRY_SAVE_FAILED")
+                log.exception("AI_TOKEN_TELEMETRY_SAVE_FAILED")
             result_usage = {**usage_totals, "available": usage_complete}
             return (text, result_usage) if return_usage else text
         for round_number in range(profile["rounds"]):
