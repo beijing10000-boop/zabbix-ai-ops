@@ -182,7 +182,7 @@ def make_card(event, info=None, *, analysis=False, mute_info=None):
         "elements":elements
     }
 
-async def notify(card):
+async def notify(card, event=None):
     """Send alert cards solely through the configured Feishu enterprise app."""
     if cfg("feishu_enabled").lower() != "true":
         log.warning("FEISHU_APP_ALERT_DISABLED")
@@ -197,11 +197,36 @@ async def notify(card):
         token = await get_token(client)
         for chat_id in chats:
             try:
-                await request(client, "POST", ROOT + "/im/v1/messages", token,
-                    params={"receive_id_type": "chat_id"},
-                    json={"receive_id": chat_id, "msg_type": "interactive",
-                          "content": json.dumps(card, ensure_ascii=False)})
-                log.info("FEISHU_APP_ALERT_SENT chat_id_prefix=%s", chat_id[:5])
+                original_id = None
+                if event and str(event.get("event_value", "1")) == "0":
+                    from .main import connection
+                    with connection() as db:
+                        row = db.execute("SELECT message_id FROM alert_message_links WHERE event_id=? AND chat_id=?",
+                                         (str(event["event_id"]), chat_id)).fetchone()
+                    original_id = row[0] if row else None
+                    if not original_id:
+                        log.info("FEISHU_RECOVERY_NO_ORIGINAL event_id=%s chat_prefix=%s",
+                                 event["event_id"], chat_id[:5])
+                        continue
+                if original_id:
+                    response = await request(client, "POST", ROOT + "/im/v1/messages/" + original_id + "/reply", token,
+                        json={"msg_type":"interactive", "content":json.dumps(card, ensure_ascii=False),
+                              "reply_in_thread":False})
+                else:
+                    response = await request(client, "POST", ROOT + "/im/v1/messages", token,
+                        params={"receive_id_type": "chat_id"},
+                        json={"receive_id": chat_id, "msg_type": "interactive",
+                              "content": json.dumps(card, ensure_ascii=False)})
+                    if event and str(event.get("event_value", "1")) == "1":
+                        message_id = (response.get("data") or {}).get("message_id")
+                        if not message_id:
+                            raise RuntimeError("Feishu did not return original alert message ID")
+                        from .main import connection
+                        with connection() as db:
+                            db.execute("INSERT INTO alert_message_links(event_id,chat_id,message_id) VALUES (?,?,?) "
+                                       "ON CONFLICT(event_id,chat_id) DO UPDATE SET message_id=excluded.message_id",
+                                       (str(event["event_id"]),chat_id,message_id))
+                log.info("FEISHU_APP_ALERT_SENT chat_id_prefix=%s reply=%s",chat_id[:5],bool(original_id))
             except Exception as exc:
                 log.error("FEISHU_APP_ALERT_FAILED chat_id_prefix=%s error=%s",
                           chat_id[:5], type(exc).__name__)
@@ -268,7 +293,7 @@ async def handle_alert(event):
                 log.info("FEISHU_ALERT_MUTED event_id=%s",event.get("event_id"))
                 return {"event_id":event["event_id"],"notified":False,"muted":True}
     try:
-        await notify(make_card(event, info))
+        await notify(make_card(event, info), event=event)
         update_event(event, notify_status="sent" if cfg("feishu_enabled").lower()=="true" else "disabled")
     except Exception:
         update_event(event, notify_status="failed")
