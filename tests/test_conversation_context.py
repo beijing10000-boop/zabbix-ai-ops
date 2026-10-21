@@ -8,6 +8,8 @@ class FakeRedis:
         self.items[key] = value
     def get(self, key):
         return self.items.get(key)
+    def delete(self, key):
+        self.items.pop(key, None)
 
 def test_reply_context_is_scoped_by_chat_and_message(monkeypatch):
     fake = FakeRedis()
@@ -23,15 +25,15 @@ def test_reply_context_is_scoped_by_chat_and_message(monkeypatch):
     assert len(followup["turns"]) == 2
     assert "172.20.200.6" in ctx.format_context(followup)
 
-def test_context_limited_to_ten_turns(monkeypatch):
+def test_context_depth_is_counted_for_worker_limit(monkeypatch):
     fake = FakeRedis()
     monkeypatch.setattr(ctx, "_client", lambda: fake)
     data = None
-    for i in range(13):
+    for i in range(4):
         ctx.remember("oc_test", "om_q" + str(i), "om_a" + str(i), "question" + str(i), "answer" + str(i), data)
         data = ctx.recall("oc_test", "om_a" + str(i))
-    assert len(data["turns"]) == 10
-    assert data["turns"][-1]["question"] == "question12"
+    assert len(data["turns"]) == 4
+    assert data["turns"][-1]["question"] == "question3"
 
 def test_thread_context_survives_third_and_fourth_reply(monkeypatch):
     fake = FakeRedis()
@@ -50,3 +52,27 @@ def test_thread_context_survives_third_and_fourth_reply(monkeypatch):
     assert "172.20.2.113" in ctx.format_context(third)
     assert ctx.recall_thread("oc_other", "om_alert") is None
     assert ctx.recall_thread("oc_group1", "om_unrelated") is None
+
+def test_pending_progress_card(monkeypatch):
+    fake = FakeRedis()
+    monkeypatch.setattr(ctx, "_client", lambda: fake)
+    ctx.mark_pending("oc_group", "om_progress")
+    assert ctx.is_pending("oc_group", "om_progress")
+    assert not ctx.is_pending("oc_other", "om_progress")
+    ctx.clear_pending("oc_group", "om_progress")
+    assert not ctx.is_pending("oc_group", "om_progress")
+
+
+def test_reply_to_older_branch_does_not_inherit_newer_answers(monkeypatch):
+    fake = FakeRedis()
+    monkeypatch.setattr(ctx, "_client", lambda: fake)
+    ctx.remember("oc", "om_alert", "om_A", "分析", "回答A",
+                 {"origin": "告警172.20.2.101", "turns": []})
+    a = ctx.recall("oc", "om_A")
+    ctx.remember("oc", "om_qB", "om_B", "问题B", "回答B", a)
+    ctx.remember("oc", "om_qC", "om_C", "问题C", "回答C", ctx.recall("oc", "om_B"))
+    ctx.remember("oc", "om_other", "om_other_reply", "从A重新追问", "不同分支", ctx.recall("oc", "om_A"))
+    payload = ctx.recall("oc", "om_other_reply")
+    assert len(payload["turns"]) == 2
+    assert "回答B" not in ctx.format_context(payload)
+    assert "告警172.20.2.101" in ctx.format_context(payload)
