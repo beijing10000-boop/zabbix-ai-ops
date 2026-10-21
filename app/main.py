@@ -25,8 +25,8 @@ REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 app = FastAPI(title="Zabbix AI Ops", version="0.2.0")
 app.mount("/assets", StaticFiles(directory=Path(__file__).parent.parent / "web" / "assets"), name="assets")
 SENSITIVE = {"openai_api_key", "mcp_token", "lark_app_secret", "zabbix_webhook_secret"}
-ALLOWED = SENSITIVE | {"openai_base_url", "openai_model", "mcp_url", "lark_app_id", "allowed_chat_ids", "min_severity", "ai_min_severity", "ai_prompt", "ai_alert_prompt", "ai_qa_prompt", "feishu_enabled", "web_protocol", "web_public_host", "feishu_alert_chat_ids", "feishu_admin_open_ids"}
-DEFAULTS = {"min_severity": "3", "ai_min_severity": "4", "feishu_enabled": "false", "web_protocol": "http"}
+ALLOWED = SENSITIVE | {"openai_base_url", "openai_model", "mcp_url", "lark_app_id", "allowed_chat_ids", "ai_min_severity", "ai_alert_prompt", "ai_qa_prompt", "feishu_enabled", "web_protocol", "web_public_host", "feishu_alert_chat_ids", "feishu_admin_open_ids"}
+DEFAULTS = {"ai_min_severity": "4", "feishu_enabled": "false", "web_protocol": "http"}
 
 def cipher():
     if not MASTER_KEY:
@@ -87,7 +87,7 @@ def connection():
         if "event_json" not in columns:
             db.execute("ALTER TABLE alert_events ADD COLUMN event_json TEXT")
         db.execute("CREATE INDEX IF NOT EXISTS ix_ai_questions_created ON ai_questions(id DESC)")
-        db.execute("DELETE FROM settings WHERE key IN ('write_enabled','write_mcp_url','write_mcp_token','ai_approver_open_ids')")
+        db.execute("DELETE FROM settings WHERE key IN ('write_enabled','write_mcp_url','write_mcp_token','ai_approver_open_ids','min_severity','ai_prompt')")
         db.execute("CREATE TABLE IF NOT EXISTS alert_message_links (event_id TEXT NOT NULL, chat_id TEXT NOT NULL, message_id TEXT NOT NULL, PRIMARY KEY(event_id,chat_id))")
         db.execute("CREATE TABLE IF NOT EXISTS alert_mutes (host_id TEXT NOT NULL,trigger_id TEXT NOT NULL,expires_at INTEGER NOT NULL,created_at TEXT DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY(host_id,trigger_id))")
         db.commit()
