@@ -366,6 +366,16 @@ async def analyze_on_demand(event, message_id, chat_id=None):
                 + "；主机：" + str(event.get("host_name") or "")
                 + "；IP：" + str(event.get("host_ip") or "")
                 + "；Host ID：" + str(event.get("host_id") or ""))
+    # Resolve known delivery chat before creating the progress card, so replies
+    # while AI is running can be rejected without an extra Feishu API request.
+    if not chat_id:
+        from .main import connection
+        with connection() as db:
+            rows = db.execute(
+                "SELECT chat_id FROM alert_message_links WHERE event_id=? AND message_id=?",
+                (event_id, message_id)).fetchall()
+        if len(rows) == 1:
+            chat_id = rows[0][0]
     update_event(event, ai_status="running")
     progress_id = None
     try:
@@ -426,9 +436,13 @@ async def analyze_on_demand(event, message_id, chat_id=None):
                 log.warning("ALERT_AI_CONTEXT_CHAT_MISSING event_id=%s", event_id)
         except Exception:
             log.exception("ALERT_AI_CONTEXT_SAVE_FAILED event_id=%s", event_id)
+        if chat_id:
+            clear_pending(chat_id, progress_id)
         update_event(event, ai_status="success")
         return {"diagnosed": True, "event_id": event_id, "reply_id": progress_id}
     except Exception:
+        if chat_id:
+            clear_pending(chat_id, progress_id)
         update_event(event, ai_status="failed")
         log.exception("MANUAL_AI_ANALYSIS_FAILED event_id=%s", event_id)
         if progress_id:
