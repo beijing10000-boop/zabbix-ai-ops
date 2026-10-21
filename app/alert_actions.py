@@ -110,3 +110,32 @@ def card_after_mute(value, operator_open_id):
     card = make_card(event, mute_info=info)
     card["config"]["update_multi"] = True
     return card
+
+def handle_unmute_action(value, operator_open_id):
+    """Authorize, verify clicked event identity, and revoke only its matching mute."""
+    import time
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    from .worker import make_card
+    if not _authorized(operator_open_id):
+        return False, "仅飞书管理员可以解除屏蔽", None
+    event = _event(value)
+    if not event or str(event.get("host_id")) != str(value.get("host_id")):
+        return False, "告警信息校验失败", None
+    host = str(event["host_id"])
+    trigger = str(event["trigger_id"])
+    if not (host.isdigit() and trigger.isdigit()):
+        return False, "无效的主机或触发器", None
+    with connection() as db:
+        record = db.execute("SELECT expires_at FROM alert_mutes WHERE host_id=? AND trigger_id=?",
+                            (host, trigger)).fetchone()
+        if not record or record[0] <= int(time.time()):
+            return False, "屏蔽已失效，无需重复解除", None
+        db.execute("DELETE FROM alert_mutes WHERE host_id=? AND trigger_id=?", (host, trigger))
+        db.execute("INSERT INTO audit(action,key) VALUES (?,?)",
+                   ("alert_unmute_feishu", host + ":" + trigger))
+    at = datetime.now(ZoneInfo("Asia/Shanghai")).strftime("%Y-%m-%d %H:%M:%S")
+    card = make_card(event, mute_info={
+        "operator": "<at id=" + operator_open_id + "></at>",
+        "duration": "已手动解除", "time": at, "expires": "不再屏蔽", "active": False})
+    return True, "已解除屏蔽，后续飞书告警正常发送", card
