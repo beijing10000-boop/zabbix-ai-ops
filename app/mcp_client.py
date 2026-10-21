@@ -122,10 +122,10 @@ async def investigate(event, client, model, prompt):
                 available = {t.name for t in listed.tools if t.name in READ_TOOLS}
                 evidence = {}
                 item_map = {}
-                trusted_hosts = {host_id: {"hostid": host_id}} if str(event.get("host_id") or "").isdigit() else {}
                 count = 0
                 event_id = str(event.get("event_id") or "")
                 host_id = str(event.get("host_id") or "")
+                trusted_hosts = {host_id: {"hostid": host_id}} if host_id.isdigit() else {}
                 trigger_id = str(event.get("trigger_id") or "")
 
                 async def query(name, args):
