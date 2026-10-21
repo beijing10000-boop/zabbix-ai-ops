@@ -155,19 +155,19 @@ def test_alert_mute_button_targets_host_and_trigger():
     event={"event_id":"777001","host_id":"101","trigger_id":"202",
            "severity":"2","event_value":"1","event_name":"Load high"}
     card=worker.make_card(event)
-    buttons=[a for el in card["elements"] if el["tag"]=="column_set" for col in el["columns"] for item in col["elements"] if item["tag"]=="action" for a in item["actions"]]
+    buttons=[a for el in card["elements"] if el["tag"]=="action" for a in el["actions"]]
     assert len(buttons)==2
     assert {b["value"]["op"] for b in buttons}=={"choose_mute","analyze_alert"}
     assert all(b["value"]["trigger_id"]=="202" and b["value"]["event_id"]=="777001" for b in buttons)
     assert all("url" not in b for b in buttons)
     recovery=worker.make_card({**event,"event_value":"0"})
-    assert not any(el["tag"]=="column_set" for el in recovery["elements"])
+    assert not any(el["tag"]=="action" for el in recovery["elements"])
 
 def test_alert_mute_requires_matching_identity():
     event={"event_id":"777002","host_id":"{HOST.ID}","trigger_id":"202",
            "severity":"2","event_value":"1"}
     card=worker.make_card(event)
-    assert not any(el["tag"]=="column_set" for el in card["elements"])
+    assert not any(el["tag"]=="action" for el in card["elements"])
 
 def test_recovery_sent_only_for_original_feishu_sent_problem(monkeypatch):
     from app.main import connection
@@ -197,7 +197,7 @@ def test_mute_summary_follows_action_buttons():
         "time":"2026-10-21 10:00:00","expires":"2026-10-21 14:00:00"})
     assert card["config"]["update_multi"] is True
     assert "临时屏蔽仅影响后续飞书通知" not in str(card)
-    assert any(el["tag"]=="column_set" for el in card["elements"])
+    assert not any(el["tag"]=="column_set" for el in card["elements"])
     assert "ou_admin" in str(card["elements"][-1])
     assert "4 小时" in str(card["elements"][-1])
     assert card["elements"][-1]["extra"]["value"]["op"]=="unmute_alert"
@@ -243,3 +243,11 @@ def test_recovery_replies_to_matching_chat_messages(monkeypatch):
     assert sent[0][0].endswith("/om_oc_chat1/reply")
     assert sent[1][0].endswith("/om_oc_chat2/reply")
     assert all(entry[1]["json"]["reply_in_thread"] is False for entry in sent)
+
+def test_feishu_card_does_not_nest_action_inside_column():
+    event={"event_id":"100200","host_id":"101","trigger_id":"202","severity":"2","event_value":"1"}
+    from app.worker import make_card
+    card=make_card(event)
+    assert any(el["tag"]=="action" for el in card["elements"])
+    assert not any(el["tag"]=="column_set" for el in card["elements"])
+    assert [b["value"]["op"] for e in card["elements"] if e["tag"]=="action" for b in e["actions"]] == ["choose_mute","analyze_alert"]
