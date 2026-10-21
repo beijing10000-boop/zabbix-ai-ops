@@ -10,7 +10,7 @@ def test_alert_prompt_keeps_required_json_contract():
 
 def test_all_alerts_notified_before_ai_and_severity_gate(monkeypatch):
     sent=[]
-    async def notify(card):
+    async def notify(card, event=None):
         sent.append(card)
     async def analyze(event):
         assert len(sent) == 2  # low-priority card + original severe card
@@ -34,7 +34,7 @@ def test_ai_failure_does_not_block_initial_alert(monkeypatch):
     async def broken(_):
         raise RuntimeError("model offline")
     sent=[]
-    async def notify(card):
+    async def notify(card, event=None):
         sent.append(card)
     monkeypatch.setattr(worker, "cfg",lambda key:"4" if key=="ai_min_severity" else "")
     monkeypatch.setattr(worker, "analyze", broken)
@@ -172,7 +172,7 @@ def test_alert_mute_requires_matching_identity():
 def test_recovery_sent_only_for_original_feishu_sent_problem(monkeypatch):
     from app.main import connection
     sent=[]
-    async def notify(card):
+    async def notify(card, event=None):
         sent.append(card)
     monkeypatch.setattr(worker,"notify",notify)
     monkeypatch.setattr(worker,"cfg",lambda key:"true" if key=="feishu_enabled" else "4")
@@ -217,3 +217,29 @@ def test_manual_analysis_replies_to_original_card(monkeypatch):
     assert len(sent)==1
     assert sent[0][0]=="om_original"
     assert "CPU趋势连续上升" in sent[0][2]
+
+def test_recovery_replies_to_matching_chat_messages(monkeypatch):
+    from app import feishu_client
+    from app.main import connection
+    sent=[]
+    event={"event_id":"recovery-link-900","event_value":"1"}
+    async def token(_client):
+        return "token"
+    async def request(_client,method,url,auth,**kwargs):
+        sent.append((url,kwargs))
+        return {"data":{"message_id":"om_" + kwargs["json"]["receive_id"]}} if "receive_id" in kwargs.get("json",{}) else {"data":{"message_id":"om_reply"}}
+    monkeypatch.setattr(feishu_client,"get_token",token)
+    monkeypatch.setattr(feishu_client,"request",request)
+    monkeypatch.setattr(worker,"cfg",lambda key: {
+        "feishu_enabled":"true","feishu_alert_chat_ids":"oc_chat1,oc_chat2"}.get(key,""))
+    asyncio.run(worker.notify({"elements":[]},event=event))
+    with connection() as db:
+        ids=db.execute("SELECT chat_id,message_id FROM alert_message_links WHERE event_id=? ORDER BY chat_id",
+                       (event["event_id"],)).fetchall()
+    assert ids==[("oc_chat1","om_oc_chat1"),("oc_chat2","om_oc_chat2")]
+    sent.clear()
+    asyncio.run(worker.notify({"elements":[]},event={**event,"event_value":"0"}))
+    assert len(sent)==2
+    assert sent[0][0].endswith("/om_oc_chat1/reply")
+    assert sent[1][0].endswith("/om_oc_chat2/reply")
+    assert all(entry[1]["json"]["reply_in_thread"] is False for entry in sent)
