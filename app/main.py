@@ -25,8 +25,8 @@ REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 app = FastAPI(title="Zabbix AI Ops", version="0.5.0")
 app.mount("/assets", StaticFiles(directory=Path(__file__).parent.parent / "web" / "assets"), name="assets")
 SENSITIVE = {"openai_api_key", "mcp_token", "lark_app_secret", "zabbix_webhook_secret"}
-ALLOWED = SENSITIVE | {"openai_base_url", "openai_model", "mcp_url", "lark_app_id", "allowed_chat_ids", "ai_min_severity", "ai_alert_prompt", "ai_qa_prompt", "feishu_enabled", "web_protocol", "web_public_host", "feishu_alert_chat_ids", "feishu_admin_open_ids", "ai_analysis_profile"}
-DEFAULTS = {"ai_min_severity": "4", "feishu_enabled": "false", "web_protocol": "http", "ai_analysis_profile": "standard"}
+ALLOWED = SENSITIVE | {"openai_base_url", "openai_model", "mcp_url", "lark_app_id", "allowed_chat_ids", "ai_min_severity", "ai_alert_prompt", "ai_qa_prompt", "feishu_enabled", "web_protocol", "web_public_host", "feishu_alert_chat_ids", "feishu_admin_open_ids", "ai_analysis_profile", "ai_tool_loading"}
+DEFAULTS = {"ai_min_severity": "4", "feishu_enabled": "false", "web_protocol": "http", "ai_analysis_profile": "standard", "ai_tool_loading": "dynamic"}
 
 def cipher():
     if not MASTER_KEY:
