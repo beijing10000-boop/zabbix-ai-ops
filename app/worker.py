@@ -33,10 +33,10 @@ async def analyze(event):
         raise RuntimeError("AI model configuration missing")
     # Tool calls are integrated in a separate MCP adapter; never assert MCP
     # evidence unless it has been fetched by that adapter.
-    from .mcp_client import investigate
+    from .mcp_runtime import run
     prompt = alert_instructions(cfg("ai_alert_prompt"))
-    async with AsyncOpenAI(api_key=key, base_url=url, timeout=120) as client:
-        raw = (await investigate(event, client, model, prompt)).strip()
+    raw = (await run(prompt, json.dumps({"alert": event}, ensure_ascii=False),
+                     model=model)).strip()
     try:
         data = json.loads(re.sub(r"^\x60\x60\x60(?:json)?\s*|\s*\x60\x60\x60$", "", raw))
         if not isinstance(data, dict):
