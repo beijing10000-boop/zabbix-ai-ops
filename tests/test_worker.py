@@ -157,10 +157,11 @@ def test_alert_mute_button_targets_host_and_trigger():
            "severity":"2","event_value":"1","event_name":"Load high"}
     card=worker.make_card(event)
     buttons=[a for el in card["elements"] if el["tag"]=="action" for a in el["actions"]]
-    assert len(buttons)==2
-    assert {b["value"]["op"] for b in buttons}=={"choose_mute","analyze_alert"}
-    assert all(b["value"]["trigger_id"]=="202" and b["value"]["event_id"]=="777001" for b in buttons)
-    assert all("url" not in b for b in buttons)
+    assert len(buttons)==3
+    actions=[b for b in buttons if "value" in b]
+    assert {b["value"]["op"] for b in actions}=={"choose_mute","analyze_alert"}
+    assert all(b["value"]["trigger_id"]=="202" and b["value"]["event_id"]=="777001" for b in actions)
+    assert buttons[0]["url"].startswith("http")
     recovery=worker.make_card({**event,"event_value":"0"})
     assert [b["value"]["op"] for el in recovery["elements"] if el["tag"]=="action" for b in el["actions"] if "value" in b] == ["analyze_alert"]
 
@@ -251,7 +252,7 @@ def test_feishu_card_does_not_nest_action_inside_column():
     card=make_card(event)
     assert any(el["tag"]=="action" for el in card["elements"])
     assert not any(el["tag"]=="column_set" for el in card["elements"])
-    assert [b["value"]["op"] for e in card["elements"] if e["tag"]=="action" for b in e["actions"]] == ["analyze_alert","choose_mute"]
+    assert [b["value"]["op"] for e in card["elements"] if e["tag"]=="action" for b in e["actions"] if "value" in b] == ["analyze_alert","choose_mute"]
 
 def test_source_button_precedes_actions_for_problem_and_recovery():
     event={"event_id":"6180279","host_id":"101","trigger_id":"202","severity":"3","event_value":"1"}
