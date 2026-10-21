@@ -61,7 +61,8 @@ def handle_choose_mute(value, operator_open_id):
     card["config"]["update_multi"] = True
     # Replace exactly the action row, not positional trailing card elements.
     actions = card["elements"]
-    index = next((i for i, item in enumerate(actions) if item.get("tag") == "action" and\n                  any(a.get("value", {}).get("op") == "choose_mute" for a in item.get("actions", []))), -1)
+    index = next((i for i, item in enumerate(actions) if item.get("tag") == "action" and
+                  any(a.get("value", {}).get("op") == "choose_mute" for a in item.get("actions", []))), -1)
     if index < 0:
         return False, "告警卡片缺少操作区", None
     actions[index:index + 1] = [
