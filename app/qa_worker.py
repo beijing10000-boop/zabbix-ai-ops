@@ -37,7 +37,7 @@ async def execute(chat_id, question, message_id, sender_open_id=None, parent_id=
         from .mcp_runtime import format_usage
         result, usage = await ask(question, context, return_usage=True)
         display_result = result + "\n\n---\n" + format_usage(usage)
-        record_ai_question("feishu", message_id, question, "success")
+        record_ai_question("feishu", message_id, question, "success", token_usage=usage)
         remember(chat_id, message_id, progress_id, question, result, stored)
         if progress_id:
             try:
