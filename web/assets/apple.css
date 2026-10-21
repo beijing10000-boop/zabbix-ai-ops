@@ -40,3 +40,8 @@
 #failed-jobs td:last-child{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;overflow-wrap:anywhere}
 #task-load-status{margin-top:10px}
 @media(max-width:900px){.task-queue-grid{grid-template-columns:1fr}}
+
+.token-stat-number{font-size:27px;font-weight:750;margin-top:16px;font-variant-numeric:tabular-nums}
+.token-run{border:1px solid var(--separator);border-radius:12px;padding:15px;margin-top:12px;overflow:auto}
+.token-run summary{font-weight:600;cursor:pointer;color:var(--label)}
+.token-run table{margin-top:15px;min-width:680px}

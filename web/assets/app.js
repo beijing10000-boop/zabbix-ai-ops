@@ -1,6 +1,6 @@
 
 let csrf='',settings={},currentUser={};
-const title={dashboard:'总览仪表盘',config:'系统配置',debug:'连接调试',ask:'AI 诊断助手',logs:'任务与审计'};
+const title={dashboard:'总览仪表盘',config:'系统配置',debug:'连接调试',ask:'AI 诊断助手',logs:'任务与审计',tokens:'Token 分析'};
 const configGroups=[
   {name:'平台与访问',keys:['web_protocol','web_public_host']},
   {name:'AI 模型与提示词',keys:['openai_base_url','openai_model','openai_api_key','ai_alert_prompt','ai_qa_prompt','ai_analysis_profile']},
@@ -10,7 +10,7 @@ const configGroups=[
 const labels={web_protocol:'Web 访问协议（http / https）',web_public_host:'Web 外部访问主机（例：172.20.200.93:8088）',openai_base_url:'AI API Base URL',openai_model:'AI 模型',openai_api_key:'AI API Key',mcp_url:'Zabbix MCP URL',mcp_token:'只读 MCP Token',lark_app_id:'飞书 App ID',lark_app_secret:'飞书 App Secret',allowed_chat_ids:'允许群聊 ID',feishu_enabled:'飞书通知开关（true/false）',feishu_alert_chat_ids:'企业应用告警群 Chat ID（逗号分隔；留空沿用允许群聊 ID）',feishu_admin_open_ids:'飞书管理员 Open ID（唯一配置来源，ou_ 开头，多个用英文逗号分隔）',zabbix_webhook_secret:'Zabbix Webhook 密钥',ai_min_severity:'AI 分析最低级别（0–5，默认4=严重）',ai_alert_prompt:'告警分析提示词',ai_qa_prompt:'主动问答提示词',ai_analysis_profile:'AI 分析档位（快速 / 标准 / 深度）'};
 const secrets=new Set(['openai_api_key','mcp_token','lark_app_secret','zabbix_webhook_secret']);
 async function api(path,options={}){const response=await fetch(path,{credentials:'same-origin',...options,headers:{'Content-Type':'application/json','X-CSRF-Token':csrf,...options.headers}});let data;try{data=await response.json()}catch{throw Error('HTTP '+response.status)}if(!response.ok)throw Error(typeof data.detail==='string'?data.detail:'HTTP '+response.status);return data}
-function page(id){document.querySelectorAll('.page').forEach(el=>el.classList.toggle('active',el.id===id));document.querySelectorAll('.nav button').forEach(el=>el.classList.toggle('active',el.dataset.page===id));document.getElementById('pagetitle').textContent=title[id];if(id==='config')loadSettings();if(id==='dashboard')refreshStatus();if(id==='logs')loadLogs()}
+function page(id){document.querySelectorAll('.page').forEach(el=>el.classList.toggle('active',el.id===id));document.querySelectorAll('.nav button').forEach(el=>el.classList.toggle('active',el.dataset.page===id));document.getElementById('pagetitle').textContent=title[id];if(id==='config')loadSettings();if(id==='dashboard')refreshStatus();if(id==='logs')loadLogs();if(id==='tokens')loadTokenAnalytics()}
 async function bootstrap(){try{currentUser=await api('/api/v1/auth/me');csrf=currentUser.csrf;document.getElementById('login').style.display='none';document.getElementById('app').style.display='block';document.getElementById('username').textContent=currentUser.name;document.getElementById('avatar').textContent=(currentUser.name||'A').slice(0,1);refreshStatus();checkMuteLink();fetch('/healthz',{cache:'no-store'}).then(r=>r.json()).then(v=>{document.getElementById('app-version').textContent='版本 v'+(v.version||'未知')}).catch(()=>{document.getElementById('app-version').textContent='版本未知'})}catch(e){document.getElementById('login-error').textContent='请点击飞书账号登录。如首次配置，确认回调地址和管理员白名单。'}}
 async function logout(){try{await api('/api/v1/auth/logout',{method:'POST'})}catch(e){}location.href='/'}
 async function loadSettings(){try{settings=await api('/api/v1/settings');document.getElementById('fields').replaceChildren(...configGroups.flatMap(group=>{const heading=document.createElement('div');heading.className='ops-section-title';heading.textContent=group.name;return [heading,...group.keys.map(key=>{const label=labels[key];const wrap=document.createElement('div');if(['ai_alert_prompt','ai_qa_prompt'].includes(key))wrap.className='span2';const l=document.createElement('label');l.textContent=label;const input=document.createElement(['web_protocol','feishu_enabled','ai_analysis_profile'].includes(key)?'select':(['ai_alert_prompt','ai_qa_prompt','ai_prompt'].includes(key)?'textarea':'input'));if(['web_protocol','feishu_alert_mode','feishu_enabled','ai_analysis_profile'].includes(key)){const choices=key==='web_protocol'?['http','https']:(key==='ai_analysis_profile'?['quick','standard','deep']:['false','true']);for(const choice of choices){const opt=document.createElement('option');opt.value=choice;opt.textContent=key==='ai_analysis_profile'?({'quick':'快速分析（2轮/4次）','standard':'标准分析（4轮/8次，默认）','deep':'深度分析（6轮/16次）'}[choice]):choice;input.append(opt)}}input.id='field-'+key;if(secrets.has(key))input.type='password';input.value=settings[key]||'';wrap.append(l,input);return wrap})]}))}catch(e){document.getElementById('save-result').textContent=e.message}}
@@ -64,6 +64,49 @@ async function loadLogs(){
   }catch(e){status.textContent='加载失败：'+e.message;emptyTable(failedBody,'无法读取失败任务',2);emptyTable(auditBody,'无法读取审计记录',3)}
 }
 
+
+function tokenFmt(v){return v===null||v===undefined?'—':Number(v).toLocaleString('zh-CN')}
+function tokenCell(value){const el=document.createElement('td');el.textContent=String(value??'—');return el}
+async function loadTokenAnalytics(){
+ const status=document.getElementById('token-status'),cards=document.getElementById('token-stats');
+ const daily=document.getElementById('token-daily'),records=document.getElementById('token-records');
+ status.textContent='正在读取使用量…';cards.replaceChildren();daily.replaceChildren();records.replaceChildren();
+ try{
+  const params=new URLSearchParams({days:document.getElementById('token-days').value,source:document.getElementById('token-source').value});
+  const data=await api('/api/v1/ai-token-usage?'+params);
+  for(const [label,value] of [['总 Token',data.total_tokens],['输入 Token',data.total_input],['输出 Token',data.total_output],['分析次数',data.runs]]){
+   const card=document.createElement('div');card.className='task-queue-card';
+   const t=document.createElement('div');t.className='task-queue-title';t.textContent=label;
+   const n=document.createElement('div');n.className='token-stat-number';n.textContent=tokenFmt(value);
+   card.append(t,n);cards.append(card);
+  }
+  for(const day of data.daily){
+   const tr=document.createElement('tr');
+   tr.append(tokenCell(day.date),tokenCell(day.runs),tokenCell(tokenFmt(day.input)),tokenCell(tokenFmt(day.output)),tokenCell(tokenFmt(day.tokens)));
+   daily.append(tr);
+  }
+  if(!data.daily.length){const tr=document.createElement('tr');const td=tokenCell('暂无逐轮统计数据');td.colSpan=5;tr.append(td);daily.append(tr)}
+  for(const run of data.records){
+   const details=document.createElement('details');details.className='token-run';
+   const summary=document.createElement('summary');
+   summary.textContent=(run.time||'')+' · '+(run.source==='alert'?'告警分析':'AI 问答')+' · '+run.model+' · '+run.profile+' · '+tokenFmt(run.total)+' Token · '+run.tools+' 次工具调用';
+   details.append(summary);
+   const table=document.createElement('table');table.className='table';
+   const head=document.createElement('thead');head.innerHTML='<tr><th>类型 / 轮次</th><th>工具</th><th>输入</th><th>输出</th><th>耗时(ms)</th><th>结果字符数</th></tr>';table.append(head);
+   const tbody=document.createElement('tbody');
+   for(const part of run.details||[]){
+    const tr=document.createElement('tr');
+    tr.append(tokenCell(part.kind==='round'?'第 '+part.round+' 轮':'MCP 工具'),
+      tokenCell(part.kind==='tool'?part.name:'—'),tokenCell(tokenFmt(part.input)),tokenCell(tokenFmt(part.output)),
+      tokenCell(part.ms??'—'),tokenCell(part.kind==='tool'?tokenFmt(part.chars)+' / 原始 '+tokenFmt(part.raw_chars):'—'));
+    tbody.append(tr);
+   }table.append(tbody);details.append(table);records.append(details);
+  }
+  if(!data.records.length)records.textContent='暂无分析记录。部署后完成新一轮 AI 分析即可开始记录。';
+  status.textContent='已加载 '+data.runs+' 次分析'+(data.truncated?' · 记录已达到本次查询上限':'');
+ }catch(e){status.textContent='加载失败：'+e.message}
+}
+
 bootstrap();
 
 /* Centralized event registration; legacy inline handlers removed. */
@@ -94,3 +137,7 @@ document.querySelectorAll('[data-ui-click="23"]').forEach(el=>el.addEventListene
 document.querySelectorAll('[data-ui-click="24"]').forEach(el=>el.addEventListener('click',event=>{testAi();}));
 document.querySelectorAll('[data-ui-click="25"]').forEach(el=>el.addEventListener('click',event=>{askAi();}));
 document.querySelectorAll('[data-ui-click="26"]').forEach(el=>el.addEventListener('click',event=>{loadLogs();}));
+
+document.querySelectorAll('[data-ui-click="27"]').forEach(el=>el.addEventListener('click',()=>page('tokens')));
+document.querySelectorAll('[data-ui-click="28"]').forEach(el=>el.addEventListener('click',loadTokenAnalytics));
+for(const id of ['token-days','token-source'])document.getElementById(id)?.addEventListener('change',loadTokenAnalytics);

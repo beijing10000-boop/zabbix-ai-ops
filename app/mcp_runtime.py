@@ -98,6 +98,7 @@ async def run(prompt, question, *, client=None, model=None, context="", return_u
         executed = 0
         usage_totals = {"input": 0, "output": 0, "total": 0}
         usage_complete = True
+        telemetry = []
         def track(response):
             nonlocal usage_complete
             counts = usage_counts(response)
@@ -108,6 +109,23 @@ async def run(prompt, question, *, client=None, model=None, context="", return_u
                 usage_totals[key] += counts[key]
             usage_totals["total"] += counts["total"] if counts["total"] is not None else counts["input"] + counts["output"]
         def finish(text):
+            # Telemetry contains only metadata, not prompts or MCP result contents.
+            try:
+                from .main import connection
+                source = "alert" if question.lstrip().startswith('{"alert":') else "qa"
+                with connection() as db:
+                    db.execute("""INSERT INTO ai_token_runs
+                        (source,model,profile,token_input,token_output,token_total,rounds,tools,result_chars,details)
+                        VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                        (source,str(model)[:120],profile_name,
+                         usage_totals["input"] if usage_complete else None,
+                         usage_totals["output"] if usage_complete else None,
+                         usage_totals["total"] if usage_complete else None,
+                         sum(1 for d in telemetry if d.get("kind")=="round"),
+                         executed,sum(d.get("chars",0) for d in telemetry if d.get("kind")=="tool"),
+                         json.dumps(telemetry,ensure_ascii=False)))
+            except Exception:
+                log.exception("AI_TOKEN_TELEMETRY_SAVE_FAILED")
             result_usage = {**usage_totals, "available": usage_complete}
             return (text, result_usage) if return_usage else text
         for round_number in range(profile["rounds"]):
@@ -124,6 +142,11 @@ async def run(prompt, question, *, client=None, model=None, context="", return_u
                      profile_name, round_number + 1,
                      (round_counts or {}).get("input"), (round_counts or {}).get("output"),
                      (round_counts or {}).get("total"), executed)
+            telemetry.append({"kind":"round","round":round_number+1,
+                "input":(round_counts or {}).get("input"),
+                "output":(round_counts or {}).get("output"),
+                "total":(round_counts or {}).get("total"),
+                "tools_before":executed})
             output = list(response.output or [])
             conversation.extend(item.model_dump(exclude_none=True) for item in output)
             calls = [item for item in output if item.type == "function_call"]
@@ -131,6 +154,8 @@ async def run(prompt, question, *, client=None, model=None, context="", return_u
                 log.info("MCP_AGENT_DONE rounds=%s calls=%s", round_number+1, executed)
                 return finish((response.output_text or "").strip())
             for i, call in enumerate(calls):
+                began = time.monotonic()
+                raw_chars = 0
                 if call.name not in available:
                     outcome = {"error": "tool absent from MCP discovery"}
                 elif executed >= profile["calls"] or i >= profile["per_round"] or time.monotonic() > deadline - 5:
@@ -143,6 +168,7 @@ async def run(prompt, question, *, client=None, model=None, context="", return_u
                         executed += 1
                         mcp_result = await asyncio.wait_for(session.call_tool(call.name, args), timeout=18)
                         contents = [str(getattr(part, "text", "")) for part in mcp_result.content[:2]]
+                        raw_chars = sum(len(part) for part in contents)
                         # Per-call budget: prevents one verbose item from dominating later rounds.
                         budget = profile["result_chars"]
                         outcome = {"is_error": bool(getattr(mcp_result, "isError", False)),
@@ -153,8 +179,13 @@ async def run(prompt, question, *, client=None, model=None, context="", return_u
                         log.warning("MCP_AGENT_TOOL_FAILED tool=%s type=%s",
                                     call.name, type(exc).__name__)
                         outcome = {"error": type(exc).__name__}
+                result_body = json.dumps(outcome, ensure_ascii=False)[:profile["result_chars"] + 250]
+                telemetry.append({"kind":"tool","round":round_number+1,
+                    "name":call.name[:100],"chars":len(result_body),
+                    "raw_chars":raw_chars,"ms":round((time.monotonic()-began)*1000),
+                    "error":bool(outcome.get("error") or outcome.get("is_error"))})
                 conversation.append({"type": "function_call_output", "call_id": call.call_id,
-                                     "output": json.dumps(outcome, ensure_ascii=False)[:profile["result_chars"] + 250]})
+                                     "output": result_body})
         response = await client.responses.create(
             model=model, instructions=prompt + "\n工具预算已结束，请立即根据已有证据给出最终回答，不要编造事实。",
             input=conversation, tool_choice="none", timeout=35)
@@ -163,5 +194,8 @@ async def run(prompt, question, *, client=None, model=None, context="", return_u
         log.info("MCP_AGENT_ROUND profile=%s round=final input=%s output=%s total=%s calls_so_far=%s",
                  profile_name, (counts or {}).get("input"), (counts or {}).get("output"),
                  (counts or {}).get("total"), executed)
+        telemetry.append({"kind":"round","round":"final","input":(counts or {}).get("input"),
+                          "output":(counts or {}).get("output"),"total":(counts or {}).get("total"),
+                          "tools_before":executed})
         log.info("MCP_AGENT_BUDGET_END calls=%s", executed)
         return finish((response.output_text or "").strip())

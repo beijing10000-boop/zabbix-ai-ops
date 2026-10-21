@@ -91,6 +91,14 @@ def connection():
             for field in ("token_total", "token_input", "token_output"):
                 if field not in existing:
                     db.execute("ALTER TABLE " + table + " ADD COLUMN " + field + " INTEGER")
+        db.execute("""CREATE TABLE IF NOT EXISTS ai_token_runs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            source TEXT NOT NULL, model TEXT NOT NULL, profile TEXT NOT NULL,
+            token_input INTEGER, token_output INTEGER, token_total INTEGER,
+            rounds INTEGER NOT NULL, tools INTEGER NOT NULL,
+            result_chars INTEGER NOT NULL, details TEXT NOT NULL
+        )""")
+        db.execute("CREATE INDEX IF NOT EXISTS ix_ai_token_created ON ai_token_runs(id DESC)")
         db.execute("CREATE INDEX IF NOT EXISTS ix_ai_questions_created ON ai_questions(id DESC)")
         db.execute("DELETE FROM settings WHERE key IN ('write_enabled','write_mcp_url','write_mcp_token','ai_approver_open_ids','min_severity','ai_prompt')")
         db.execute("CREATE TABLE IF NOT EXISTS alert_message_links (event_id TEXT NOT NULL, chat_id TEXT NOT NULL, message_id TEXT NOT NULL, PRIMARY KEY(event_id,chat_id))")
@@ -301,6 +309,45 @@ def qa_stats():
     return {"total":sum(d.values()),"pending":d.get("pending",0),
             "running":d.get("running",0),"success":d.get("success",0),"failed":d.get("failed",0)}
 
+
+@app.get("/api/v1/ai-token-usage", dependencies=[Depends(require_admin)])
+def ai_token_usage(days: int = 30, source: str = "all", model: str = "all", limit: int = 100):
+    """Metadata-only usage dashboard; never includes prompt, tool output, or monetary prices."""
+    days = min(max(days, 1), 365)
+    limit = min(max(limit, 1), 200)
+    with connection() as db:
+        rows = db.execute("""SELECT id,created_at,source,model,profile,token_input,
+            token_output,token_total,rounds,tools,result_chars,details
+            FROM ai_token_runs WHERE created_at >= datetime('now', ?)
+            ORDER BY id DESC LIMIT 10000""", (f"-{days} days",)).fetchall()
+    records = []
+    daily = {}
+    total_input = total_output = total_tokens = 0
+    for r in rows:
+        if source != "all" and r[2] != source:
+            continue
+        if model != "all" and r[3] != model:
+            continue
+        inp, out, tok = r[5], r[6], r[7]
+        if inp is not None: total_input += inp
+        if out is not None: total_output += out
+        if tok is not None: total_tokens += tok
+        day = beijing_time(r[1])[:10]
+        day_data = daily.setdefault(day, {"date":day,"tokens":0,"input":0,"output":0,"runs":0})
+        day_data["runs"] += 1
+        day_data["tokens"] += tok or 0
+        day_data["input"] += inp or 0
+        day_data["output"] += out or 0
+        if len(records) < limit:
+            records.append({"id":r[0], "time":beijing_time(r[1]),"source":r[2],"model":r[3],
+                "profile":r[4],"input":inp,"output":out,"total":tok,
+                "rounds":r[8],"tools":r[9],"result_chars":r[10],
+                "details":json.loads(r[11])})
+    return {"total_input":total_input,"total_output":total_output,"total_tokens":total_tokens,
+        "runs":sum(x["runs"] for x in daily.values()),
+        "truncated":len(rows)>=10000,
+        "daily":sorted(daily.values(),key=lambda x:x["date"]),
+        "records":records}
 
 @app.get("/api/v1/qa-events", dependencies=[Depends(require_admin)])
 def qa_events(limit:int=100,offset:int=0):
