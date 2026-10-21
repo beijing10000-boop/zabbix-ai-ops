@@ -37,9 +37,9 @@ def test_ask_validation():
 
 def test_web_ask_calls_read_only_agent(monkeypatch):
     from app import ai_agent
-    async def fake_ask(question):
+    async def fake_ask(question, return_usage=False):
         assert question == "查询严重告警"
-        return "已从 MCP 查询"
+        return ("已从 MCP 查询", {"available":True,"input":8,"output":2,"total":10}) if return_usage else "已从 MCP 查询"
     monkeypatch.setattr(ai_agent, "ask", fake_ask)
     response=client.post("/api/v1/ask",
         headers={"Authorization":"Bearer test-admin"},
