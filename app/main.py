@@ -151,6 +151,81 @@ def health():
         db.execute("SELECT 1").fetchone()
     return {"ok": True, "version": app.version}
 
+
+# Bootstrap is intentionally separate from normal administrator authentication.
+# It works only while required login settings are incomplete.
+BOOTSTRAP_KEYS = ("feishu_admin_open_ids", "lark_app_id", "lark_app_secret", "web_public_host")
+
+def setup_missing():
+    return [key for key in BOOTSTRAP_KEYS if not read_setting(key).strip()]
+
+class SetupRequest(BaseModel):
+    bootstrap_token: str = Field(min_length=1, max_length=512)
+    web_protocol: str
+    web_public_host: str
+    lark_app_id: str
+    lark_app_secret: str
+    feishu_admin_open_ids: str
+
+@app.get("/api/v1/setup/status")
+def setup_status():
+    # No secrets disclosed.
+    return {"setup_required": bool(setup_missing())}
+
+@app.get("/setup")
+def setup_page():
+    return FileResponse(Path(__file__).parent.parent / "web" / "setup.html")
+
+@app.post("/api/v1/setup")
+def complete_setup(body: SetupRequest):
+    import re
+    from urllib.parse import urlsplit
+    if not ADMIN_TOKEN or not hmac.compare_digest(body.bootstrap_token, ADMIN_TOKEN):
+        raise HTTPException(403, "初始化凭据错误")
+    if not setup_missing():
+        raise HTTPException(409, "系统已经初始化，请登录 Web 后台修改配置")
+    if body.web_protocol not in ("http", "https"):
+        raise HTTPException(422, "无效访问协议")
+    host = urlsplit(body.web_protocol + "://" + body.web_public_host.strip())
+    if (not host.hostname or not host.netloc or host.username or host.password or
+            host.path not in ("", "/") or host.query or host.fragment or
+            host.port is not None and not 1 <= host.port <= 65535):
+        raise HTTPException(422, "外部访问地址只能填写域名/IP及可选端口")
+    ids = [item.strip() for item in body.feishu_admin_open_ids.split(",") if item.strip()]
+    if not ids or len(ids) > 100 or any(not re.fullmatch(r"ou_[A-Za-z0-9_-]{2,128}", item) for item in ids):
+        raise HTTPException(422, "管理员 Open ID 无效")
+    if not re.fullmatch(r"cli_[A-Za-z0-9]{8,64}", body.lark_app_id):
+        raise HTTPException(422, "飞书 App ID 格式错误")
+    if not 8 <= len(body.lark_app_secret) <= 512:
+        raise HTTPException(422, "飞书 App Secret 格式错误")
+    entries = {
+        "web_protocol": body.web_protocol,
+        "web_public_host": body.web_public_host.strip(),
+        "lark_app_id": body.lark_app_id,
+        "lark_app_secret": body.lark_app_secret,
+        "feishu_admin_open_ids": ",".join(dict.fromkeys(ids)),
+    }
+    with connection() as db:
+        # Recheck inside write lock, so concurrent bootstrap requests cannot overwrite.
+        db.execute("BEGIN IMMEDIATE")
+        present = {row[0] for row in db.execute(
+            "SELECT key FROM settings WHERE key IN ('feishu_admin_open_ids','lark_app_id','lark_app_secret','web_public_host') AND value!=''"
+        )}
+        if len(present) == len(BOOTSTRAP_KEYS):
+            raise HTTPException(409, "初始化已完成")
+        for key, value in entries.items():
+            # Preserve pre-existing configuration during repair/migration.
+            row = db.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
+            if row and row[0] and key != "web_protocol":
+                continue
+            secret = key in SENSITIVE
+            stored = cipher().encrypt(value.encode()).decode() if secret else value
+            db.execute("INSERT INTO settings(key,value,secret) VALUES (?,?,?) "
+                       "ON CONFLICT(key) DO UPDATE SET value=excluded.value, secret=excluded.secret",
+                       (key, stored, int(secret)))
+        db.execute("INSERT INTO audit(action,key) VALUES ('initial_setup','login_configuration')")
+    return {"ok": True, "redirect": "/api/v1/auth/login"}
+
 @app.get("/api/v1/settings", dependencies=[Depends(require_admin)])
 def get_settings():
     return {k: ("********" if k in SENSITIVE and read_setting(k) else read_setting(k)) for k in sorted(ALLOWED)}
