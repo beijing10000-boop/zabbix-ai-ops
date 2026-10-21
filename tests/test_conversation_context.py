@@ -32,3 +32,21 @@ def test_context_limited_to_ten_turns(monkeypatch):
         data = ctx.recall("oc_test", "om_a" + str(i))
     assert len(data["turns"]) == 10
     assert data["turns"][-1]["question"] == "question12"
+
+def test_thread_context_survives_third_and_fourth_reply(monkeypatch):
+    fake = FakeRedis()
+    monkeypatch.setattr(ctx, "_client", lambda: fake)
+    ctx.remember("oc_group1", "om_alert", "om_analysis", "分析事件6202260",
+                 "主机172-20-2-113 (172.20.2.113)负载偏高", root_id="om_alert")
+    first = ctx.recall_thread("oc_group1", "om_alert")
+    assert first is not None
+    ctx.remember("oc_group1", "om_question2", "om_answer2",
+                 "这台机器还有什么问题", "内存可用率较低", first, root_id="om_alert")
+    second = ctx.recall_thread("oc_group1", "om_alert")
+    ctx.remember("oc_group1", "om_question3", "om_answer3",
+                 "那磁盘呢", "需要核验磁盘延迟", second, root_id="om_alert")
+    third = ctx.recall_thread("oc_group1", "om_alert")
+    assert len(third["turns"]) == 3
+    assert "172.20.2.113" in ctx.format_context(third)
+    assert ctx.recall_thread("oc_other", "om_alert") is None
+    assert ctx.recall_thread("oc_group1", "om_unrelated") is None
