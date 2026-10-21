@@ -222,6 +222,8 @@ def test_manual_analysis_progress_updates_and_context_for_both_states(monkeypatc
     monkeypatch.setattr(feishu_client,"reply_card",reply)
     monkeypatch.setattr(feishu_client,"update_card",update)
     monkeypatch.setattr(conversation_context,"remember",lambda *args, **kwargs: saved.append(args))
+    monkeypatch.setattr(conversation_context,"mark_pending",lambda *args: None)
+    monkeypatch.setattr(conversation_context,"clear_pending",lambda *args: None)
     for state in ("1","0"):
         events.clear()
         result=asyncio.run(worker.analyze_on_demand(
