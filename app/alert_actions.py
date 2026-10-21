@@ -52,29 +52,61 @@ def handle_choose_mute(value, operator_open_id):
                          (72, "3天"), (168, "7天")):
         buttons.append({"tag": "button", "text": {"tag": "plain_text", "content": label},
             "type": "primary" if hours == 1 else "default",
-            "value": {"op": "mute_alert", "host_id": host, "trigger_id": trigger,
+            "value": {"op": "mute_alert", "event_id": str(event["event_id"]), "host_id": host, "trigger_id": trigger,
                       "hours": hours, "sig": action_signature(host, trigger, hours)}})
-    card["config"]["update_multi"] = False
+    card["config"]["update_multi"] = True
     card["elements"][-2:] = [
-        {"tag": "div", "text": {"tag": "lark_md", "content": "**选择暂时屏蔽时长**（仅屏蔽后续飞书通知）"}},
+        {"tag": "div", "text": {"tag": "lark_md", "content": "**选择暂时屏蔽时长**"}},
         {"tag": "action", "actions": buttons}]
     return True, "请选择屏蔽时长", card
 
-def handle_analyze_action(value, operator_open_id):
+def handle_analyze_action(value, operator_open_id, message_id=None):
     if not _authorized(operator_open_id):
         return False, "仅飞书管理员可以触发 AI 分析"
     event = _event(value)
     if event is None:
         return False, "告警已过期或卡片签名无效"
+    if not message_id or not str(message_id).startswith("om_"):
+        return False, "无法定位原告警卡片，请使用新告警重试"
     redis = Redis.from_url(REDIS_URL)
     key = "zabbix-ai:manual-analysis:" + event["event_id"]
     if not redis.set(key, "queued", ex=300, nx=True):
         return True, "此告警的 AI 分析已提交，请勿重复点击"
     try:
         Queue("ai-alerts", connection=redis).enqueue(
-            "app.worker.process_manual_analysis", event, job_timeout=360)
+            "app.worker.process_manual_analysis", event, message_id, job_timeout=360
     except Exception:
         redis.delete(key)
         log.exception("MANUAL_ANALYSIS_ENQUEUE_FAILED")
         return False, "AI 分析任务提交失败"
-    return True, "已提交 AI 分析，结果将发送到告警群"
+    return True, "已提交 AI 分析，结果将回复原告警消息"
+
+def card_after_mute(value, operator_open_id):
+    """Render the updated shared source card with auditable mute metadata."""
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+    from .worker import make_card
+    from .main import connection
+    host = str(value.get("host_id", ""))
+    trigger = str(value.get("trigger_id", ""))
+    if not _authorized(operator_open_id):
+        raise ValueError("not authorized")
+    event_id = str(value.get("event_id") or "")
+    if not event_id.isdigit():
+        raise ValueError("missing alert event id")
+    with connection() as db:
+        row = db.execute("SELECT event_json FROM alert_events WHERE event_id=? AND event_value='1'",
+                         (event_id,)).fetchone()
+        mute = db.execute("SELECT expires_at FROM alert_mutes WHERE host_id=? AND trigger_id=?",
+                          (host, trigger)).fetchone()
+    event = json.loads(row[0]) if row and row[0] else None
+    if not event or not mute or str(event.get("host_id")) != host or str(event.get("trigger_id")) != trigger:
+        raise ValueError("original alert not found")
+    now = datetime.now(ZoneInfo("Asia/Shanghai"))
+    expires = datetime.fromtimestamp(mute[0], ZoneInfo("Asia/Shanghai"))
+    info = {"operator": "<at id=" + operator_open_id + "></at>", "duration": str(value["hours"]) + " 小时",
+            "time": now.strftime("%Y-%m-%d %H:%M:%S"),
+            "expires": expires.strftime("%Y-%m-%d %H:%M:%S")}
+    card = make_card(event, mute_info=info)
+    card["config"]["update_multi"] = True
+    return card
