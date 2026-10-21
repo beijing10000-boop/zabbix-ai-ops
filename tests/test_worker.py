@@ -325,3 +325,24 @@ def test_token_footer_separate_from_body_in_feishu_card():
     assert "Token 消耗" not in card["elements"][0]["text"]["content"]
     assert "color='grey'" in card["elements"][2]["text"]["content"]
     assert "1,234" in card["elements"][2]["text"]["content"]
+
+def test_native_feishu_token_footer():
+    from app.feishu_client import make_card
+    card=make_card("AI 分析结果","结果文本\n\n---\n本轮 Token 消耗：300（输入 250 / 输出 50）")
+    assert [e["tag"] for e in card["elements"]]==["div","hr","note"]
+    assert "Token 消耗" not in card["elements"][0]["text"]["content"]
+    assert "300" in card["elements"][2]["elements"][0]["content"]
+
+
+def test_alert_token_usage_is_persisted():
+    from app.main import connection
+    from app.worker import store_alert_usage
+    event={"event_id":"test_usage_001","event_value":"1"}
+    with connection() as db:
+        db.execute("INSERT OR IGNORE INTO alert_events(event_id,event_value,event_name) VALUES (?,'1','token test')",
+                   (event["event_id"],))
+    store_alert_usage(event, {"available":True,"total":120,"input":100,"output":20})
+    with connection() as db:
+        row=db.execute("SELECT token_total,token_input,token_output FROM alert_events WHERE event_id=? AND event_value='1'",
+                       (event["event_id"],)).fetchone()
+    assert row==(120,100,20)
