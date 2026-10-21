@@ -7,9 +7,26 @@ log = logging.getLogger(__name__)
 ROOT = "https://open.feishu.cn/open-apis"
 
 def make_card(title, text, template="blue"):
-    return {"config":{"wide_screen_mode":True,"update_multi":True},
-            "header":{"title":{"tag":"plain_text","content":title},"template":template},
-            "elements":[{"tag":"div","text":{"tag":"lark_md","content":str(text)[:11000]}}]}
+    """Consistent, compact Feishu Q&A card; do not embed actions in columns."""
+    body = str(text)[:11000]
+    elements = [{"tag": "div", "text": {"tag": "lark_md", "content": body}}]
+    if "分析中" in title:
+        footer = "◷ 正在处理 · 请稍候，完成后将在此卡片更新结果"
+    elif "失败" in title:
+        footer = "● 处理未完成 · 请检查问题或稍后重试"
+    elif "完成" in title:
+        footer = "✓ 分析已完成 · 结果仅供运维诊断参考"
+    else:
+        footer = ""
+    if footer:
+        elements.extend([
+            {"tag": "hr"},
+            {"tag": "div", "text": {"tag": "lark_md", "content": footer}},
+        ])
+    return {"config": {"wide_screen_mode": True, "update_multi": True},
+            "header": {"title": {"tag": "plain_text", "content": title},
+                       "template": template},
+            "elements": elements}
 
 async def request(client, method, url, token=None, **kwargs):
     headers = {"Authorization": "Bearer "+token} if token else {}
