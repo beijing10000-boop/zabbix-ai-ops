@@ -74,7 +74,7 @@ def handle_analyze_action(value, operator_open_id, message_id=None):
         return True, "此告警的 AI 分析已提交，请勿重复点击"
     try:
         Queue("ai-alerts", connection=redis).enqueue(
-            "app.worker.process_manual_analysis", event, message_id, job_timeout=360
+            "app.worker.process_manual_analysis", event, message_id, job_timeout=360)
     except Exception:
         redis.delete(key)
         log.exception("MANUAL_ANALYSIS_ENQUEUE_FAILED")
