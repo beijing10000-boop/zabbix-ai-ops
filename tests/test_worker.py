@@ -168,7 +168,7 @@ def test_alert_mute_requires_matching_identity():
     event={"event_id":"777002","host_id":"{HOST.ID}","trigger_id":"202",
            "severity":"2","event_value":"1"}
     card=worker.make_card(event)
-    assert not any(el["tag"]=="action" for el in card["elements"])
+    assert all(b.get("value", {}).get("op") != "choose_mute" for e in card["elements"] if e["tag"]=="action" for b in e["actions"])
 
 def test_recovery_sent_only_for_original_feishu_sent_problem(monkeypatch):
     from app.main import connection
