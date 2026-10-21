@@ -419,11 +419,10 @@ async def analyze_on_demand(event, message_id, chat_id=None):
                     log.warning("ALERT_AI_CONTEXT_CHAT_AMBIGUOUS event_id=%s matches=%s",
                                 event_id, len(rows))
             if chat_id:
-                original = ("原始告警消息：事件ID=" + event_id
-                            + "；主机=" + str(event.get("host_name") or "")
-                            + "；IP=" + str(event.get("host_ip") or "")
-                            + "；告警=" + str(event.get("event_name") or "")
-                            + "；事件值=" + str(event.get("latest_value") or ""))
+                # Use the actual visible alert card text, not a guessed summary.
+                source_card = make_card(event)
+                original = (str(source_card["header"]["title"]["content"]) + "\\n"
+                            + str(source_card["elements"][0]["text"]["content"]))
                 remember(chat_id, message_id, progress_id, question, detail,
                          parent_context={"origin": original, "turns": []},
                          root_id=message_id)
