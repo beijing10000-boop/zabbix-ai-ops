@@ -204,21 +204,36 @@ def test_mute_summary_follows_action_buttons():
     assert "4 小时" in str(card["elements"][-1])
     assert card["elements"][-1]["extra"]["value"]["op"]=="unmute_alert"
 
-def test_manual_analysis_replies_to_original_card(monkeypatch):
-    from app import feishu_client
-    sent=[]
+def test_manual_analysis_progress_updates_and_context_for_both_states(monkeypatch):
+    from app import feishu_client, conversation_context
+    from app.main import connection
+    events=[]
     async def analyze(event):
         return {"cause":"负载较高","action":"检查进程","analysis":"CPU趋势连续上升"}
     async def reply(message_id,title,detail):
-        sent.append((message_id,title,detail))
+        events.append(("reply",message_id,title,detail))
+        return "om_progress"
+    async def update(message_id,title,detail,template="green"):
+        events.append(("update",message_id,title,detail))
+    async def chat(message_id):
+        return "oc_group"
+    saved=[]
     monkeypatch.setattr(worker,"analyze",analyze)
     monkeypatch.setattr(feishu_client,"reply_card",reply)
-    result=asyncio.run(worker.analyze_on_demand(
-        {"event_id":"773311","severity":"2","event_value":"1"},"om_original"))
-    assert result["diagnosed"]
-    assert len(sent)==1
-    assert sent[0][0]=="om_original"
-    assert "CPU趋势连续上升" in sent[0][2]
+    monkeypatch.setattr(feishu_client,"update_card",update)
+    monkeypatch.setattr(feishu_client,"get_message_chat_id",chat)
+    monkeypatch.setattr(conversation_context,"remember",lambda *args: saved.append(args))
+    for state in ("1","0"):
+        events.clear()
+        result=asyncio.run(worker.analyze_on_demand(
+            {"event_id":"773311","severity":"2","event_value":state,"event_name":"CPU high"},"om_original"))
+        assert result["diagnosed"]
+        assert len(events)==2
+        assert events[0][0:3]==("reply","om_original","AI 分析中")
+        assert events[1][0:3]==("update","om_progress","AI 分析结果")
+        assert "CPU趋势连续上升" in events[1][3]
+        assert saved[-1][0:3]==("oc_group","om_original","om_progress")
+
 
 def test_recovery_replies_to_matching_chat_messages(monkeypatch):
     from app import feishu_client
