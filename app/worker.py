@@ -141,18 +141,18 @@ def make_card(event, info=None, *, analysis=False, mute_info=None):
                 "type": "default", "url": link})
         if event_id.isdigit() and trigger_id.isdigit():
             from .alert_mute import action_signature
-            if not recovery and host_id.isdigit():
-                actions.append({"tag": "button",
-                    "text": {"tag": "plain_text", "content": "🔕 暂时屏蔽"},
-                    "type": "default", "value": {"op": "choose_mute",
-                        "event_id": event_id, "trigger_id": trigger_id,
-                        "sig": action_signature(event_id, trigger_id, 0)}})
             actions.append({"tag": "button",
                 "text": {"tag": "plain_text", "content": "🤖 AI分析"},
                 "type": "primary", "value": {"op": "analyze_alert",
                     "event_id": event_id, "trigger_id": trigger_id,
                     "event_value": "0" if recovery else "1",
                     "sig": action_signature(event_id, trigger_id, 0)}})
+            if not recovery and host_id.isdigit():
+                actions.append({"tag": "button",
+                    "text": {"tag": "plain_text", "content": "🔕 暂时屏蔽"},
+                    "type": "default", "value": {"op": "choose_mute",
+                        "event_id": event_id, "trigger_id": trigger_id,
+                        "sig": action_signature(event_id, trigger_id, 0)}})
         if actions:
             elements.append({"tag": "hr"})
             elements.append({"tag": "action", "actions": actions})
