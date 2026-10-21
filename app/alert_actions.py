@@ -104,7 +104,7 @@ def card_after_mute(value, operator_open_id):
         raise ValueError("original alert not found")
     now = datetime.now(ZoneInfo("Asia/Shanghai"))
     expires = datetime.fromtimestamp(mute[0], ZoneInfo("Asia/Shanghai"))
-    info = {"operator": operator_open_id, "duration": str(value["hours"]) + " 小时",
+    info = {"operator": "<at id=" + operator_open_id + "></at>", "duration": str(value["hours"]) + " 小时",
             "time": now.strftime("%Y-%m-%d %H:%M:%S"),
             "expires": expires.strftime("%Y-%m-%d %H:%M:%S")}
     card = make_card(event, mute_info=info)
