@@ -66,3 +66,10 @@ Webhook JSON 新增可选字段 `latest_value`，故障和恢复事件均可设�
 限制：最多 12 次 MCP 查询、4 轮模型工具交互、每监控项最多 120 个历史点、趋势 24 小时、最多 8 个关联 item ID、总时间预算约 70 秒。历史查询按告警发生时间或恢复时间回溯；对 1 小时以上的需求应控制采样开销。若 MCP 未配置、查询失败或超预算，AI 仍可报告证据不足，禁止编造数值。MCP 返回的不可信文本只作为数据。日志可检查 \`ALERT_MCP_COMPLETED\` 和 \`ALERT_MCP_QUERY_FAILED\`，不记录 token。
 
 上线建议先运行 \`python3 -m compileall -q app\` 和 \`docker compose run --rm --no-deps alert-worker python -m pytest -q tests/test_alert_mcp_multiround.py\`（若镜像未安装 pytest，先在独立测试环境安装），再更新 alert-worker。监测 MCP 请求量、分析耗时及模型工具调用支持情况；部分兼容 OpenAI Responses API 的第三方模型不一定支持函数调用。
+
+
+## 统一原生 MCP 工具调用
+
+告警自动分析、卡片手动分析、飞书 AI 问答共用 `app/mcp_runtime.py`，直接向模型公开 MCP Server `list_tools` 返回的原生工具名称和输入参数 schema，不再使用客户端的工具白名单或中间封装。独立保留 `ai_alert_prompt`、`ai_qa_prompt`。每任务最多 6 轮、16 次 MCP 调用、单轮最多 8 次，单任务预算约 110 秒、每个响应正文最多约 14,000 字符。查看 `MCP_AGENT_TOOL`、`MCP_AGENT_DONE` 日志。
+
+**上线门槛：** 此模式信任 MCP 服务端发布的全部工具，并不能保证工具只读。你之前列出的 MCP 工具包含 `configuration_importcompare`、`user_login`、`token_get` 等，需要先在 MCP Server 端验证这些工具的权限策略及所用 Zabbix 账号是否已严格只读、是否禁止读取敏感资料。否则模型可能调用这些工具。本项目客户端不再代替服务端进行授权。
