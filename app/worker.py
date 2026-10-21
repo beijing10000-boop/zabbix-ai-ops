@@ -165,7 +165,7 @@ def make_card(event, info=None, *, analysis=False, mute_info=None):
                 elements.append({"tag":"div","text":{"tag":"lark_md",
                     "content": "**"+label+"**\n"+safe(detail,size)}})
     return {
-        "config":{"wide_screen_mode":True},
+        "config":{"wide_screen_mode":True,"update_multi":True},
         "header":{"title":{"tag":"plain_text","content":title},
                   "template":"green" if recovery else COLORS.get(sev,"grey")},
         "elements":elements
