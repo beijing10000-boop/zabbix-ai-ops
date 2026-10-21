@@ -388,7 +388,7 @@ async def analyze_on_demand(event, message_id):
         try:
             chat_id = await get_message_chat_id(message_id)
             if chat_id:
-                remember(chat_id, message_id, progress_id, question, detail)
+                remember(chat_id, message_id, progress_id, question, detail, root_id=message_id)
                 log.info("ALERT_AI_CONTEXT_SAVED event_id=%s recovery=%s", event_id, is_recovery)
             else:
                 log.warning("ALERT_AI_CONTEXT_CHAT_MISSING event_id=%s", event_id)

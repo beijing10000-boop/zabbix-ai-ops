@@ -7,7 +7,7 @@ from redis import Redis
 from rq import Worker, Queue
 from .ai_agent import ask
 from .alert_context import resolve_replied_event
-from .conversation_context import remember, recall, format_context
+from .conversation_context import remember, recall, recall_thread, format_context
 from .feishu_client import reply_card, send_card, update_card, send_text
 
 log = logging.getLogger(__name__)
@@ -23,12 +23,19 @@ async def execute(chat_id, question, message_id, sender_open_id=None, parent_id=
         log.exception("FEISHU_PROGRESS_FAILED message_id=%s", message_id)
 
     try:
-        stored = recall(chat_id, parent_id) or (recall(chat_id, root_id) if root_id and root_id != parent_id else None)
+        stored = (recall(chat_id, parent_id)
+                  or (recall(chat_id, root_id) if root_id != parent_id else None)
+                  or recall_thread(chat_id, root_id or parent_id))
         log.info("FEISHU_CONTEXT_RESOLVED message_id=%s found=%s parent=%s root=%s", message_id, bool(stored), bool(parent_id), bool(root_id))
         context = format_context(stored)
-        if parent_id and not stored:
+        if (parent_id or root_id) and not stored:
             try:
-                event_id = await resolve_replied_event(parent_id, chat_id)
+                event_id = None
+                for source_message in dict.fromkeys((parent_id, root_id)):
+                    if source_message:
+                        event_id = await resolve_replied_event(source_message, chat_id)
+                    if event_id:
+                        break
                 if event_id:
                     context = "用户正在回复 Zabbix 告警，引用的事件 ID 为 " + event_id + "。请使用 MCP 重新核验最新状态。"
                     log.info("FEISHU_REPLIED_ALERT message_id=%s event_id=%s", message_id, event_id)
@@ -38,7 +45,7 @@ async def execute(chat_id, question, message_id, sender_open_id=None, parent_id=
         result, usage = await ask(question, context, return_usage=True)
         display_result = result + "\n\n---\n" + format_usage(usage)
         record_ai_question("feishu", message_id, question, "success", token_usage=usage)
-        remember(chat_id, message_id, progress_id, question, result, stored)
+        remember(chat_id, message_id, progress_id, question, result, stored, root_id=root_id or parent_id or message_id)
         if progress_id:
             try:
                 await update_card(progress_id, "AI 分析完成", display_result)
@@ -46,7 +53,8 @@ async def execute(chat_id, question, message_id, sender_open_id=None, parent_id=
                 return
             except Exception:
                 log.exception("FEISHU_CARD_UPDATE_FAILED message_id=%s", message_id)
-        await reply_card(message_id, "AI 分析完成", display_result)
+        fallback_id = await reply_card(message_id, "AI 分析完成", display_result)
+        remember(chat_id, message_id, fallback_id, question, result, stored, root_id=root_id or parent_id or message_id)
     except Exception as exc:
         record_ai_question("feishu", message_id, question, "failed", type(exc).__name__)
         log.exception("FEISHU_QA_FAILED message_id=%s", message_id)
