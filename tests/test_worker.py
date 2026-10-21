@@ -221,12 +221,11 @@ def test_manual_analysis_progress_updates_and_context_for_both_states(monkeypatc
     monkeypatch.setattr(worker,"analyze",analyze)
     monkeypatch.setattr(feishu_client,"reply_card",reply)
     monkeypatch.setattr(feishu_client,"update_card",update)
-    monkeypatch.setattr(feishu_client,"get_message_chat_id",chat)
     monkeypatch.setattr(conversation_context,"remember",lambda *args, **kwargs: saved.append(args))
     for state in ("1","0"):
         events.clear()
         result=asyncio.run(worker.analyze_on_demand(
-            {"event_id":"773311","severity":"2","event_value":state,"event_name":"CPU high"},"om_original"))
+            {"event_id":"773311","severity":"2","event_value":state,"event_name":"CPU high","host_name":"node1","host_ip":"172.20.2.101"},"om_original","oc_group"))
         assert result["diagnosed"]
         assert len(events)==2
         assert events[0][0:3]==("reply","om_original","AI 分析中")
