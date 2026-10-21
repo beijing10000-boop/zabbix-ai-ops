@@ -79,3 +79,11 @@ def test_read_tool_allowlist_has_no_mutations():
                    for x in mcp_client.READ_TOOLS)
     assert mcp_client.MAX_CALLS == 12
     assert mcp_client.MAX_POINTS <= 120
+
+def test_cross_host_tools_are_bounded_and_read_only():
+    names={tool["name"] for tool in mcp_client.DEFINITIONS}
+    assert {"find_hosts", "other_host_items", "item_history", "item_trend"}.issubset(names)
+    assert mcp_client.MAX_OTHER_HOSTS <= 4
+    assert mcp_client.MAX_ITEMS <= 12
+    assert all(name in {"event_get", "host_get", "trigger_get", "item_get", "history_get", "trend_get"}
+               for name in mcp_client.READ_TOOLS)
