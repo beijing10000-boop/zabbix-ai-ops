@@ -88,7 +88,7 @@ def zabbix_event_link(event):
     return base + "/tr_events.php?" + urlencode({"triggerid": trigger_id, "eventid": event_id})
 
 
-def make_card(event, info=None, *, analysis=False):
+def make_card(event, info=None, *, analysis=False, mute_info=None):
     """Mobile-friendly, compact ops event; separate rich severe AI analysis."""
     info = info or {}
     sev = str(event.get("severity", "0"))
@@ -140,7 +140,7 @@ def make_card(event, info=None, *, analysis=False):
             from .alert_mute import action_signature
             elements.append({"tag": "hr"})
             elements.append({"tag": "div", "text": {"tag": "lark_md",
-                "content": "**告警操作**  ·  临时屏蔽仅影响后续飞书通知"}})
+                "content": "**告警操作**"}})
             elements.append({"tag": "action", "actions": [
                 {"tag": "button", "text": {"tag": "plain_text", "content": "🔕 暂时屏蔽"},
                  "type": "default", "value": {"op": "choose_mute", "event_id": event_id,
@@ -150,6 +150,13 @@ def make_card(event, info=None, *, analysis=False):
                  "type": "primary", "value": {"op": "analyze_alert", "event_id": event_id,
                      "trigger_id": trigger_id, "sig": action_signature(event_id, trigger_id, 0)}}
             ]})
+    if mute_info and not recovery:
+        elements.append({"tag": "hr"})
+        elements.append({"tag": "div", "text": {"tag": "lark_md",
+            "content": "**屏蔽信息**\n**操作人**  " + safe(mute_info.get("operator"), 100)
+            + "\n**屏蔽时长**  " + safe(mute_info.get("duration"), 30)
+            + "\n**操作时间**  " + safe(mute_info.get("time"), 40)
+            + "\n**到期时间**  " + safe(mute_info.get("expires"), 40)}})
     if analysis and not recovery:
         for label, field, size in (("故障原因","cause",120),("处理建议","action",160),("AI 分析","analysis",500)):
             detail = valid_macro(info.get(field))
@@ -286,12 +293,19 @@ if __name__ == "__main__":
     redis = Redis.from_url(os.getenv("REDIS_URL","redis://redis:6379/0"))
     Worker([Queue("ai-alerts", connection=redis)], connection=redis).work()
 
-async def analyze_on_demand(event):
+async def analyze_on_demand(event, message_id):
     """Analyze a saved alert on explicit Feishu request using the existing read-only pipeline."""
     update_event(event, ai_status="running")
     try:
         result = await analyze(event)
-        await notify(make_card(event, result, analysis=True))
+        from .feishu_client import reply_card
+        if not message_id or not message_id.startswith("om_"):
+            raise ValueError("missing original Feishu message id")
+        detail = "\n".join("**" + label + "**\n" + safe(result.get(field), size)
+                           for label, field, size in (("故障原因","cause",120),
+                                                      ("处理建议","action",160),
+                                                      ("AI 分析","analysis",500)))
+        await reply_card(message_id, "AI 分析结果", detail)
         update_event(event, ai_status="success")
         return {"diagnosed": True, "event_id": event["event_id"]}
     except Exception:
@@ -300,5 +314,5 @@ async def analyze_on_demand(event):
         raise
 
 
-def process_manual_analysis(event):
-    return asyncio.run(analyze_on_demand(event))
+def process_manual_analysis(event, message_id):
+    return asyncio.run(analyze_on_demand(event, message_id))
