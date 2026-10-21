@@ -139,9 +139,8 @@ def make_card(event, info=None, *, analysis=False, mute_info=None):
         if host_id.isdigit() and trigger_id.isdigit() and event_id.isdigit():
             from .alert_mute import action_signature
             elements.append({"tag": "hr"})
-            elements.append({"tag": "div", "text": {"tag": "lark_md",
-                "content": "**告警操作**"}})
             elements.append({"tag": "action", "actions": [
+                {"tag": "text", "text": {"tag": "plain_text", "content": "告警操作"}},
                 {"tag": "button", "text": {"tag": "plain_text", "content": "🔕 暂时屏蔽"},
                  "type": "default", "value": {"op": "choose_mute", "event_id": event_id,
                      "trigger_id": trigger_id,
@@ -157,6 +156,15 @@ def make_card(event, info=None, *, analysis=False, mute_info=None):
             + "\n**屏蔽时长**  " + safe(mute_info.get("duration"), 30)
             + "\n**操作时间**  " + safe(mute_info.get("time"), 40)
             + "\n**到期时间**  " + safe(mute_info.get("expires"), 40)}})
+        if mute_info.get("active", True):
+            from .alert_mute import action_signature
+            host_id, trigger_id, event_id = (str(event.get(k) or "") for k in ("host_id", "trigger_id", "event_id"))
+            if host_id.isdigit() and trigger_id.isdigit() and event_id.isdigit():
+                elements.append({"tag": "action", "actions": [
+                    {"tag": "button", "text": {"tag": "plain_text", "content": "取消屏蔽"},
+                     "type": "default", "value": {"op": "unmute_alert", "host_id": host_id,
+                         "trigger_id": trigger_id, "event_id": event_id,
+                         "sig": action_signature(event_id, trigger_id, 0)}}]})
     if analysis and not recovery:
         for label, field, size in (("故障原因","cause",120),("处理建议","action",160),("AI 分析","analysis",500)):
             detail = valid_macro(info.get(field))
