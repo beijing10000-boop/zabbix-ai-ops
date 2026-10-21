@@ -68,3 +68,16 @@ async def send_text(chat_id,text):
             params={"receive_id_type":"chat_id"},
             json={"receive_id":chat_id,"msg_type":"text",
                   "content":json.dumps({"text":text},ensure_ascii=False)})
+
+
+async def get_message_chat_id(message_id):
+    """Fetch the source chat to bind follow-up context to that exact Feishu group."""
+    if not message_id or not str(message_id).startswith("om_"):
+        return None
+    async with httpx.AsyncClient(timeout=20) as client:
+        token = await get_token(client)
+        result = await request(client, "GET", ROOT + "/im/v1/messages/" + message_id, token)
+    for message in (result.get("data") or {}).get("items") or []:
+        if message.get("message_id") == message_id or len((result.get("data") or {}).get("items") or []) == 1:
+            return message.get("chat_id")
+    return None

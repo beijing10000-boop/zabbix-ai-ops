@@ -335,25 +335,58 @@ if __name__ == "__main__":
     Worker([Queue("ai-alerts", connection=redis)], connection=redis).work()
 
 async def analyze_on_demand(event, message_id):
-    """Analyze a saved alert on explicit Feishu request using the existing read-only pipeline."""
+    """Fault and recovery: reply with progress, update it, preserve threaded context."""
+    from .feishu_client import reply_card, update_card, get_message_chat_id
+    from .conversation_context import remember
+    if not message_id or not str(message_id).startswith("om_"):
+        raise ValueError("missing original Feishu message id")
+    event_id = str(event.get("event_id") or "")
+    is_recovery = str(event.get("event_value", "1")) == "0"
+    subject = ("恢复事件" if is_recovery else "故障事件") + " " + event_id
+    question = subject + "：" + str(event.get("event_name") or "未知事件")
     update_event(event, ai_status="running")
+    progress_id = None
+    try:
+        progress_id = await reply_card(
+            message_id, "AI 分析中",
+            "**分析对象**  " + question[:240] + "\n\n⏳ 正在查询 Zabbix MCP 并进行分析……")
+        log.info("ALERT_AI_PROGRESS_SENT event_id=%s recovery=%s", event_id, is_recovery)
+    except Exception:
+        log.exception("ALERT_AI_PROGRESS_FAILED event_id=%s", event_id)
     try:
         result = await analyze(event)
-        from .feishu_client import reply_card
-        if not message_id or not message_id.startswith("om_"):
-            raise ValueError("missing original Feishu message id")
         detail = "\n".join("**" + label + "**\n" + safe(result.get(field), size)
-                           for label, field, size in (("故障原因","cause",120),
-                                                      ("处理建议","action",160),
-                                                      ("AI 分析","analysis",500)))
-        await reply_card(message_id, "AI 分析结果", detail)
+                           for label, field, size in (("故障原因", "cause", 120),
+                                                      ("处理建议", "action", 160),
+                                                      ("AI 分析", "analysis", 500)))
+        if progress_id:
+            try:
+                await update_card(progress_id, "AI 分析结果", detail)
+            except Exception:
+                log.exception("ALERT_AI_CARD_UPDATE_FAILED event_id=%s", event_id)
+                progress_id = await reply_card(message_id, "AI 分析结果", detail)
+        else:
+            progress_id = await reply_card(message_id, "AI 分析结果", detail)
+        try:
+            chat_id = await get_message_chat_id(message_id)
+            if chat_id:
+                remember(chat_id, message_id, progress_id, question, detail)
+                log.info("ALERT_AI_CONTEXT_SAVED event_id=%s recovery=%s", event_id, is_recovery)
+            else:
+                log.warning("ALERT_AI_CONTEXT_CHAT_MISSING event_id=%s", event_id)
+        except Exception:
+            log.exception("ALERT_AI_CONTEXT_SAVE_FAILED event_id=%s", event_id)
         update_event(event, ai_status="success")
-        return {"diagnosed": True, "event_id": event["event_id"]}
+        return {"diagnosed": True, "event_id": event_id, "reply_id": progress_id}
     except Exception:
         update_event(event, ai_status="failed")
-        log.exception("MANUAL_AI_ANALYSIS_FAILED event_id=%s", event.get("event_id"))
+        log.exception("MANUAL_AI_ANALYSIS_FAILED event_id=%s", event_id)
+        if progress_id:
+            try:
+                await update_card(progress_id, "AI 分析失败", "分析失败，请稍后重试。", "red")
+            except Exception:
+                log.exception("ALERT_AI_FAILURE_CARD_UPDATE_FAILED event_id=%s", event_id)
         raise
-
 
 def process_manual_analysis(event, message_id):
     return asyncio.run(analyze_on_demand(event, message_id))
