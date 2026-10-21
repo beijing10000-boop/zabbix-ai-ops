@@ -155,19 +155,19 @@ def test_alert_mute_button_targets_host_and_trigger():
     event={"event_id":"777001","host_id":"101","trigger_id":"202",
            "severity":"2","event_value":"1","event_name":"Load high"}
     card=worker.make_card(event)
-    buttons=[a for el in card["elements"] if el["tag"]=="action" for a in el["actions"]]
+    buttons=[a for el in card["elements"] if el["tag"]=="column_set" for col in el["columns"] for item in col["elements"] if item["tag"]=="action" for a in item["actions"]]
     assert len(buttons)==2
     assert {b["value"]["op"] for b in buttons}=={"choose_mute","analyze_alert"}
     assert all(b["value"]["trigger_id"]=="202" and b["value"]["event_id"]=="777001" for b in buttons)
     assert all("url" not in b for b in buttons)
     recovery=worker.make_card({**event,"event_value":"0"})
-    assert not any(el["tag"]=="action" for el in recovery["elements"])
+    assert not any(el["tag"]=="column_set" for el in recovery["elements"])
 
 def test_alert_mute_requires_matching_identity():
     event={"event_id":"777002","host_id":"{HOST.ID}","trigger_id":"202",
            "severity":"2","event_value":"1"}
     card=worker.make_card(event)
-    assert not any(el["tag"]=="action" for el in card["elements"])
+    assert not any(el["tag"]=="column_set" for el in card["elements"])
 
 def test_recovery_sent_only_for_original_feishu_sent_problem(monkeypatch):
     from app.main import connection
@@ -197,10 +197,10 @@ def test_mute_summary_follows_action_buttons():
         "time":"2026-10-21 10:00:00","expires":"2026-10-21 14:00:00"})
     assert card["config"]["update_multi"] is True
     assert "临时屏蔽仅影响后续飞书通知" not in str(card)
-    labels=[e for e in card["elements"] if e["tag"]=="div"]
-    assert labels[1]["text"]["content"]=="**告警操作**"
-    assert "ou_admin" in labels[-1]["text"]["content"]
-    assert "4 小时" in labels[-1]["text"]["content"]
+    assert any(el["tag"]=="column_set" for el in card["elements"])
+    assert "ou_admin" in str(card["elements"][-2])
+    assert "4 小时" in str(card["elements"][-2])
+    assert card["elements"][-1]["actions"][0]["value"]["op"]=="unmute_alert"
 
 def test_manual_analysis_replies_to_original_card(monkeypatch):
     from app import feishu_client
