@@ -19,7 +19,20 @@ MAX_ROUNDS = 6
 MAX_CALLS = 16
 MAX_PER_ROUND = 8
 MAX_SECONDS = 110
-MAX_OUTPUT_CHARS = 14000
+MAX_OUTPUT_CHARS = 14000  # legacy compatibility
+PROFILES = {
+    "quick": {"rounds": 2, "calls": 4, "per_round": 3, "result_chars": 2000, "seconds": 65},
+    "standard": {"rounds": 4, "calls": 8, "per_round": 4, "result_chars": 4000, "seconds": 110},
+    "deep": {"rounds": 6, "calls": 16, "per_round": 8, "result_chars": 6000, "seconds": 150},
+}
+def compact_result(value, max_chars):
+    """Bound each result while preserving the start and end (often summary/status)."""
+    text = str(value)
+    if len(text) <= max_chars:
+        return text
+    head = int(max_chars * .75)
+    return text[:head] + "\\n...[truncated %d chars]...\\n" % (len(text)-max_chars) + text[-(max_chars-head):]
+
 
 
 def usage_counts(response):
@@ -62,6 +75,8 @@ async def run(prompt, question, *, client=None, model=None, context="", return_u
     base_url = read_setting("openai_base_url")
     if not model or (client is None and not (key and base_url)):
         raise RuntimeError("AI 模型未配置")
+    profile_name = read_setting("ai_analysis_profile") or "standard"
+    profile = PROFILES.get(profile_name, PROFILES["standard"])
     token = read_setting("mcp_token")
     headers = {"Authorization": "Bearer " + token} if token else {}
     async with AsyncExitStack() as stack:
@@ -77,9 +92,9 @@ async def run(prompt, question, *, client=None, model=None, context="", return_u
         if client is None:
             client = await stack.enter_async_context(
                 AsyncOpenAI(api_key=key, base_url=base_url, timeout=150))
-        conversation = [{"role": "user", "content": question[:16000] +
-                         ("\n上下文：" + context[:12000] if context else "")}]
-        deadline = time.monotonic() + MAX_SECONDS
+        conversation = [{"role": "user", "content": question[:4000] +
+                         ("\n上下文：" + context[:6000] if context else "")}]
+        deadline = time.monotonic() + profile["seconds"]
         executed = 0
         usage_totals = {"input": 0, "output": 0, "total": 0}
         usage_complete = True
@@ -95,13 +110,20 @@ async def run(prompt, question, *, client=None, model=None, context="", return_u
         def finish(text):
             result_usage = {**usage_totals, "available": usage_complete}
             return (text, result_usage) if return_usage else text
-        for round_number in range(MAX_ROUNDS):
+        for round_number in range(profile["rounds"]):
+            # Diagnostics are demand-driven: stop once the model has enough evidence.
+            # All discovered native MCP tools remain available in every model round.
             if time.monotonic() >= deadline - 8:
                 break
             response = await client.responses.create(
                 model=model, instructions=prompt, input=conversation,
                 tools=definitions, timeout=min(45, max(8, int(deadline-time.monotonic()))))
             track(response)
+            round_counts = usage_counts(response)
+            log.info("MCP_AGENT_ROUND profile=%s round=%s input=%s output=%s total=%s calls_so_far=%s",
+                     profile_name, round_number + 1,
+                     (round_counts or {}).get("input"), (round_counts or {}).get("output"),
+                     (round_counts or {}).get("total"), executed)
             output = list(response.output or [])
             conversation.extend(item.model_dump(exclude_none=True) for item in output)
             calls = [item for item in output if item.type == "function_call"]
@@ -111,7 +133,7 @@ async def run(prompt, question, *, client=None, model=None, context="", return_u
             for i, call in enumerate(calls):
                 if call.name not in available:
                     outcome = {"error": "tool absent from MCP discovery"}
-                elif executed >= MAX_CALLS or i >= MAX_PER_ROUND or time.monotonic() > deadline - 5:
+                elif executed >= profile["calls"] or i >= profile["per_round"] or time.monotonic() > deadline - 5:
                     outcome = {"error": "MCP call budget exhausted"}
                 else:
                     try:
@@ -120,9 +142,11 @@ async def run(prompt, question, *, client=None, model=None, context="", return_u
                             raise ValueError("arguments must be an object")
                         executed += 1
                         mcp_result = await asyncio.wait_for(session.call_tool(call.name, args), timeout=18)
+                        contents = [str(getattr(part, "text", "")) for part in mcp_result.content[:2]]
+                        # Per-call budget: prevents one verbose item from dominating later rounds.
+                        budget = profile["result_chars"]
                         outcome = {"is_error": bool(getattr(mcp_result, "isError", False)),
-                                   "data": [str(getattr(part, "text", ""))[:9000]
-                                            for part in mcp_result.content[:2]]}
+                                   "data": [compact_result(part, budget // max(1, len(contents))) for part in contents]}
                         log.info("MCP_AGENT_TOOL tool=%s error=%s call=%s",
                                  call.name, outcome["is_error"], executed)
                     except Exception as exc:
@@ -130,10 +154,14 @@ async def run(prompt, question, *, client=None, model=None, context="", return_u
                                     call.name, type(exc).__name__)
                         outcome = {"error": type(exc).__name__}
                 conversation.append({"type": "function_call_output", "call_id": call.call_id,
-                                     "output": json.dumps(outcome, ensure_ascii=False)[:MAX_OUTPUT_CHARS]})
+                                     "output": json.dumps(outcome, ensure_ascii=False)[:profile["result_chars"] + 250]})
         response = await client.responses.create(
             model=model, instructions=prompt + "\n工具预算已结束，请立即根据已有证据给出最终回答，不要编造事实。",
             input=conversation, tool_choice="none", timeout=35)
         track(response)
+        counts = usage_counts(response)
+        log.info("MCP_AGENT_ROUND profile=%s round=final input=%s output=%s total=%s calls_so_far=%s",
+                 profile_name, (counts or {}).get("input"), (counts or {}).get("output"),
+                 (counts or {}).get("total"), executed)
         log.info("MCP_AGENT_BUDGET_END calls=%s", executed)
         return finish((response.output_text or "").strip())
