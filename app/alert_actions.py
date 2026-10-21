@@ -17,16 +17,20 @@ def _event(value):
     expected = action_signature(event_id, trigger_id, 0)
     if not hmac.compare_digest(str(value.get("sig") or ""), expected):
         return None
+    state = str(value.get("event_value") or "1")
+    if state not in ("0", "1"):
+        return None
     with connection() as db:
-        row = db.execute("SELECT event_json FROM alert_events WHERE event_id=? AND event_value='1'",
-                         (event_id,)).fetchone()
+        row = db.execute("SELECT event_json FROM alert_events WHERE event_id=? AND event_value=?",
+                         (event_id, state)).fetchone()
     if not row or not row[0]:
         return None
     try:
         event = json.loads(row[0])
     except (ValueError, TypeError):
         return None
-    if str(event.get("trigger_id")) != trigger_id or str(event.get("event_id")) != event_id:
+    if (str(event.get("trigger_id")) != trigger_id or str(event.get("event_id")) != event_id
+            or str(event.get("event_value")) != state):
         return None
     return event
 
@@ -41,7 +45,7 @@ def handle_choose_mute(value, operator_open_id):
     if not _authorized(operator_open_id):
         return False, "仅飞书管理员可以暂停告警通知", None
     event = _event(value)
-    if event is None:
+    if event is None or str(event.get("event_value")) != "1":
         return False, "告警已过期或卡片签名无效", None
     from .worker import make_card
     card = make_card(event)

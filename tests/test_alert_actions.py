@@ -57,3 +57,18 @@ def test_close_mute_checks_permissions_and_removes_only_target(monkeypatch):
     with connection() as db:
         assert db.execute("SELECT 1 FROM alert_mutes WHERE host_id='101' AND trigger_id='202'").fetchone() is None
         assert db.execute("SELECT 1 FROM alert_mutes WHERE host_id='101' AND trigger_id='999'").fetchone() is not None
+
+def test_recovery_action_reads_recovery_payload(monkeypatch):
+    from app.alert_actions import _event
+    from app.main import connection
+    monkeypatch.setenv("APP_ENCRYPTION_KEY", "unit-test-secret")
+    recovery = {"event_id":"993300","trigger_id":"202","host_id":"101","event_value":"0",
+                "severity":"2","event_name":"Recovered"}
+    with connection() as db:
+        db.execute("""INSERT OR REPLACE INTO alert_events
+            (event_id,event_value,event_name,host_name,severity,event_json)
+            VALUES (?,?,?,?,?,?)""",("993300","0","Recovered","server",2,json.dumps(recovery)))
+    value={"op":"analyze_alert","event_id":"993300","trigger_id":"202","event_value":"0",
+           "sig":action_signature("993300","202",0)}
+    assert _event(value)==recovery
+    assert _event({**value,"event_value":"1"}) is None

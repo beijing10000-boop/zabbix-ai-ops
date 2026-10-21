@@ -85,7 +85,7 @@ def test_compact_alert_card_and_recovery():
            "host_name":"DESKTOP","host_ip":"172.20.108.2","host_groups":"Office"}
     card=worker.make_card(event)
     body=str(card)
-    assert "Office" in body and "事件来源" in body
+    assert "Office" in body
     assert "故障原因" not in body and "处理建议" not in body
     assert "AI 分析" not in body and "需人工核验" not in body
     recovered=worker.make_card({**event,"event_value":"0"})
@@ -144,10 +144,11 @@ def test_zabbix_event_deep_link():
         "event_value":"1","event_name":"Link down"}
     card=worker.make_card(event)
     body=card["elements"][0]["text"]["content"]
-    assert "[查看 Zabbix 告警 ↗](http://172.20.200.90:8080/tr_events.php?triggerid=102345&eventid=6057922)" in body
+    assert "事件来源" not in body
+    assert any(b.get("url","").endswith("triggerid=102345&eventid=6057922") for e in card["elements"] if e["tag"]=="action" for b in e["actions"])
     assert "172.20.200.93 转发" not in body
     recovery=worker.make_card({**event,"event_value":"0"})
-    assert "eventid=6057922" in recovery["elements"][0]["text"]["content"]
+    assert any("eventid=6057922" in b.get("url","") for e in recovery["elements"] if e["tag"]=="action" for b in e["actions"])
     no_id=worker.make_card({**event,"trigger_id":"{TRIGGER.ID}"})
     assert "tr_events.php" not in str(no_id)
 
@@ -161,13 +162,13 @@ def test_alert_mute_button_targets_host_and_trigger():
     assert all(b["value"]["trigger_id"]=="202" and b["value"]["event_id"]=="777001" for b in buttons)
     assert all("url" not in b for b in buttons)
     recovery=worker.make_card({**event,"event_value":"0"})
-    assert not any(el["tag"]=="action" for el in recovery["elements"])
+    assert [b["value"]["op"] for el in recovery["elements"] if el["tag"]=="action" for b in el["actions"] if "value" in b] == ["analyze_alert"]
 
 def test_alert_mute_requires_matching_identity():
     event={"event_id":"777002","host_id":"{HOST.ID}","trigger_id":"202",
            "severity":"2","event_value":"1"}
     card=worker.make_card(event)
-    assert not any(el["tag"]=="action" for el in card["elements"])
+    assert all(b.get("value", {}).get("op") != "choose_mute" for e in card["elements"] if e["tag"]=="action" for b in e["actions"])
 
 def test_recovery_sent_only_for_original_feishu_sent_problem(monkeypatch):
     from app.main import connection
@@ -251,3 +252,17 @@ def test_feishu_card_does_not_nest_action_inside_column():
     assert any(el["tag"]=="action" for el in card["elements"])
     assert not any(el["tag"]=="column_set" for el in card["elements"])
     assert [b["value"]["op"] for e in card["elements"] if e["tag"]=="action" for b in e["actions"]] == ["choose_mute","analyze_alert"]
+
+def test_source_button_precedes_actions_for_problem_and_recovery():
+    event={"event_id":"6180279","host_id":"101","trigger_id":"202","severity":"3","event_value":"1"}
+    problem=worker.make_card(event)
+    recovery=worker.make_card({**event,"event_value":"0"})
+    for card, expected in ((problem,["url","choose_mute","analyze_alert"]),
+                           (recovery,["url","analyze_alert"])):
+        assert "**告警操作**" not in str(card)
+        buttons=next(e["actions"] for e in card["elements"] if e["tag"]=="action")
+        found=["url" if "url" in b else b["value"]["op"] for b in buttons]
+        assert found==expected
+        assert buttons[0]["url"].startswith("http")
+    recovery_buttons=next(e["actions"] for e in recovery["elements"] if e["tag"]=="action")
+    assert recovery_buttons[1]["value"]["event_value"]=="0"
