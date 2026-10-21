@@ -25,8 +25,8 @@ REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 app = FastAPI(title="Zabbix AI Ops", version="0.5.0")
 app.mount("/assets", StaticFiles(directory=Path(__file__).parent.parent / "web" / "assets"), name="assets")
 SENSITIVE = {"openai_api_key", "mcp_token", "lark_app_secret", "zabbix_webhook_secret"}
-ALLOWED = SENSITIVE | {"openai_base_url", "openai_model", "mcp_url", "lark_app_id", "allowed_chat_ids", "ai_min_severity", "ai_alert_prompt", "ai_qa_prompt", "feishu_enabled", "web_protocol", "web_public_host", "feishu_alert_chat_ids", "feishu_admin_open_ids", "ai_analysis_profile"}
-DEFAULTS = {"ai_min_severity": "4", "feishu_enabled": "false", "web_protocol": "http", "ai_analysis_profile": "standard"}
+ALLOWED = SENSITIVE | {"openai_base_url", "openai_model", "mcp_url", "lark_app_id", "allowed_chat_ids", "ai_min_severity", "ai_alert_prompt", "ai_qa_prompt", "feishu_enabled", "web_protocol", "web_public_host", "feishu_alert_chat_ids", "feishu_admin_open_ids", "ai_analysis_profile", "ai_price_input", "ai_price_output"}
+DEFAULTS = {"ai_min_severity": "4", "feishu_enabled": "false", "web_protocol": "http", "ai_analysis_profile": "standard", "ai_price_input": "0", "ai_price_output": "0"}
 
 def cipher():
     if not MASTER_KEY:
@@ -91,6 +91,14 @@ def connection():
             for field in ("token_total", "token_input", "token_output"):
                 if field not in existing:
                     db.execute("ALTER TABLE " + table + " ADD COLUMN " + field + " INTEGER")
+        db.execute("""CREATE TABLE IF NOT EXISTS ai_cost_runs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            source TEXT NOT NULL, model TEXT NOT NULL, profile TEXT NOT NULL,
+            token_input INTEGER, token_output INTEGER, token_total INTEGER,
+            rounds INTEGER NOT NULL, tools INTEGER NOT NULL,
+            result_chars INTEGER NOT NULL, details TEXT NOT NULL
+        )""")
+        db.execute("CREATE INDEX IF NOT EXISTS ix_ai_cost_created ON ai_cost_runs(id DESC)")
         db.execute("CREATE INDEX IF NOT EXISTS ix_ai_questions_created ON ai_questions(id DESC)")
         db.execute("DELETE FROM settings WHERE key IN ('write_enabled','write_mcp_url','write_mcp_token','ai_approver_open_ids','min_severity','ai_prompt')")
         db.execute("CREATE TABLE IF NOT EXISTS alert_message_links (event_id TEXT NOT NULL, chat_id TEXT NOT NULL, message_id TEXT NOT NULL, PRIMARY KEY(event_id,chat_id))")
@@ -247,6 +255,15 @@ def update_settings(body: SettingsUpdate):
         raise HTTPException(status_code=422, detail=f"invalid settings: {sorted(invalid)}")
     if any(not isinstance(v, str) or len(v) > 12000 for v in body.values.values()):
         raise HTTPException(status_code=422, detail="invalid value")
+    for price_key in ("ai_price_input", "ai_price_output"):
+        if price_key in body.values:
+            try:
+                from decimal import Decimal
+                value = Decimal(body.values[price_key])
+                if not value.is_finite() or value < 0 or value > 100000:
+                    raise ValueError()
+            except (ValueError, ArithmeticError):
+                raise HTTPException(status_code=422, detail="Token 单价必须是有效的非负数字")
     if "ai_analysis_profile" in body.values and body.values["ai_analysis_profile"] not in ("quick", "standard", "deep"):
         raise HTTPException(status_code=422, detail="分析档位必须为 quick、standard 或 deep")
     if "feishu_admin_open_ids" in body.values:
@@ -301,6 +318,54 @@ def qa_stats():
     return {"total":sum(d.values()),"pending":d.get("pending",0),
             "running":d.get("running",0),"success":d.get("success",0),"failed":d.get("failed",0)}
 
+
+@app.get("/api/v1/ai-cost", dependencies=[Depends(require_admin)])
+def ai_cost_overview(days: int = 30, source: str = "all", model: str = "all", limit: int = 100):
+    """Read-only accounting summary. Prices are configured CNY per million tokens."""
+    from decimal import Decimal
+    days = min(max(days, 1), 365)
+    limit = min(max(limit, 1), 200)
+    with connection() as db:
+        rows = db.execute("""SELECT id,created_at,source,model,profile,token_input,
+            token_output,token_total,rounds,tools,result_chars,details
+            FROM ai_cost_runs WHERE created_at >= datetime('now', ?)
+            ORDER BY id DESC LIMIT 10000""", (f"-{days} days",)).fetchall()
+    try:
+        price_in = Decimal(read_setting("ai_price_input") or "0")
+        price_out = Decimal(read_setting("ai_price_output") or "0")
+    except Exception:
+        price_in = price_out = Decimal(0)
+    records = []
+    daily = {}
+    total_input = total_output = total_tokens = 0
+    total_cost = Decimal(0)
+    for r in rows:
+        if source != "all" and r[2] != source:
+            continue
+        if model != "all" and r[3] != model:
+            continue
+        inp, out, tok = r[5], r[6], r[7]
+        cost = (Decimal(inp)*price_in + Decimal(out)*price_out)/1000000 if inp is not None and out is not None else None
+        if inp is not None: total_input += inp
+        if out is not None: total_output += out
+        if tok is not None: total_tokens += tok
+        if cost is not None: total_cost += cost
+        day = beijing_time(r[1])[:10]
+        day_data = daily.setdefault(day, {"date":day,"tokens":0,"cost":0.0,"runs":0})
+        day_data["runs"] += 1
+        day_data["tokens"] += tok or 0
+        day_data["cost"] += float(cost or 0)
+        if len(records) < limit:
+            records.append({"id":r[0], "time":beijing_time(r[1]),"source":r[2],"model":r[3],
+                "profile":r[4],"input":inp,"output":out,"total":tok,
+                "rounds":r[8],"tools":r[9],"result_chars":r[10],
+                "cost":round(float(cost), 6) if cost is not None else None,
+                "details":json.loads(r[11])})
+    return {"total_input":total_input,"total_output":total_output,"total_tokens":total_tokens,
+        "total_cost":round(float(total_cost), 6),"runs":sum(x["runs"] for x in daily.values()),
+        "truncated":len(rows)>=10000,"price_input":str(price_in),"price_output":str(price_out),
+        "currency":"CNY", "daily":sorted(daily.values(),key=lambda x:x["date"]),
+        "records":records}
 
 @app.get("/api/v1/qa-events", dependencies=[Depends(require_admin)])
 def qa_events(limit:int=100,offset:int=0):
