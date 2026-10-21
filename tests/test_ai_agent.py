@@ -41,6 +41,7 @@ def setup(monkeypatch, calls, final_text="分析完成"):
     monkeypatch.setattr(mcp_runtime,"streamablehttp_client",lambda *a,**k:Context(("read","write",None)))
     monkeypatch.setattr(mcp_runtime,"ClientSession",lambda *a,**k:Context(client_session))
     monkeypatch.setattr(mcp_runtime,"AsyncOpenAI",lambda **kwargs:Context(model))
+    monkeypatch.setattr(mcp_runtime,"read_setting",lambda k: {"mcp_url":"http://example.invalid/mcp","openai_api_key":"unit-test","openai_model":"test-model","openai_base_url":"https://example.invalid/v1"}.get(k,""))
     return client_session,captured
 
 def test_ten_calls_get_ten_outputs_but_only_eight_executed(monkeypatch):
