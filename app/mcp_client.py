@@ -14,7 +14,8 @@ log = logging.getLogger(__name__)
 READ_TOOLS = frozenset({"event_get", "host_get", "trigger_get", "item_get", "history_get", "trend_get"})
 MAX_CALLS = 12
 MAX_ROUNDS = 4
-MAX_ITEMS = 8
+MAX_ITEMS = 12
+MAX_OTHER_HOSTS = 4
 MAX_POINTS = 120
 MAX_RESULT_CHARS = 10000
 TIME_BUDGET = 70
@@ -29,6 +30,17 @@ DEFINITIONS = [
      "description": "Find up to 8 extra related metrics on the SAME Zabbix host, for example interference or client count. Search by a brief metric name.",
      "parameters": {"type": "object", "properties": {"keyword": {"type": "string"}},
                     "required": ["keyword"], "additionalProperties": False}, "strict": False},
+    {"type": "function", "name": "find_hosts",
+     "description": "Find up to 4 other monitored Zabbix hosts relevant to the current alert by name; provide a concrete diagnostic reason.",
+     "parameters": {"type": "object", "properties": {"keyword": {"type": "string"},
+        "reason": {"type": "string"}}, "required": ["keyword", "reason"],
+        "additionalProperties": False}, "strict": False},
+    {"type": "function", "name": "other_host_items",
+     "description": "Find monitored metrics by name for a previously discovered related host.",
+     "parameters": {"type": "object", "properties": {
+        "hostid": {"type": "string"}, "keyword": {"type": "string"},
+        "reason": {"type": "string"}}, "required": ["hostid", "keyword", "reason"],
+        "additionalProperties": False}, "strict": False},
     {"type": "function", "name": "item_history",
      "description": "Inspect up to 120 raw history points for ONE verified related item, within 24h of the alert. history type is derived from item metadata.",
      "parameters": {"type": "object", "properties": {
@@ -110,6 +122,7 @@ async def investigate(event, client, model, prompt):
                 available = {t.name for t in listed.tools if t.name in READ_TOOLS}
                 evidence = {}
                 item_map = {}
+                trusted_hosts = {host_id: {"hostid": host_id}} if str(event.get("host_id") or "").isdigit() else {}
                 count = 0
                 event_id = str(event.get("event_id") or "")
                 host_id = str(event.get("host_id") or "")
@@ -180,6 +193,51 @@ async def investigate(event, client, model, prompt):
                                 added.append(record)
                     return {"items": added, "error": result.get("error")}
 
+                def valid_reason(reason):
+                    reason = str(reason or "").strip()
+                    return 8 <= len(reason) <= 160 and "{" not in reason
+
+                async def find_hosts(keyword, reason):
+                    keyword = str(keyword or "").strip()
+                    if not valid_reason(reason):
+                        return {"error": "diagnostic reason required"}
+                    if not 2 <= len(keyword) <= 48 or not re.fullmatch(r"[\w\u4e00-\u9fff ._-]+", keyword):
+                        return {"error": "invalid host search term"}
+                    found = await query("host_get", {"search": {"name": keyword},
+                                                     "output": "extend", "limit": MAX_OTHER_HOSTS})
+                    matches = []
+                    for host in found.get("records", [])[:MAX_OTHER_HOSTS]:
+                        hid = str(host.get("hostid") or "")
+                        if hid.isdigit() and (hid in trusted_hosts or len(trusted_hosts) <= MAX_OTHER_HOSTS):
+                            trusted_hosts[hid] = {"hostid": hid, "name": host.get("name"), "host": host.get("host")}
+                            matches.append(trusted_hosts[hid])
+                    log.info("ALERT_MCP_CROSS_HOST_DISCOVERY event_id=%s count=%s reason=%s",
+                             event_id, len(matches), reason[:80])
+                    return {"hosts": matches, "error": found.get("error")}
+
+                async def other_host_items(target, keyword, reason):
+                    target = str(target or "")
+                    keyword = str(keyword or "").strip()
+                    if not valid_reason(reason) or target not in trusted_hosts or target == host_id:
+                        return {"error": "host not discovered or diagnostic reason missing"}
+                    if not 2 <= len(keyword) <= 48 or not re.fullmatch(r"[\w\u4e00-\u9fff ._-]+", keyword):
+                        return {"error": "invalid metric search term"}
+                    found = await query("item_get", {"hostids": [target],
+                           "search": {"name": keyword}, "output": "extend", "limit": MAX_ITEMS})
+                    items = []
+                    for item in found.get("records", [])[:MAX_ITEMS]:
+                        iid = str(item.get("itemid") or "")
+                        if iid.isdigit() and str(item.get("hostid")) == target and (
+                                iid in item_map or len(item_map) < MAX_ITEMS):
+                            record = {k: item.get(k) for k in (
+                               "itemid", "hostid", "name", "key_", "lastvalue",
+                               "units", "value_type", "lastclock")}
+                            item_map[iid] = record
+                            items.append(record)
+                    log.info("ALERT_MCP_CROSS_HOST_ITEMS event_id=%s hostid=%s items=%s",
+                             event_id, target, len(items))
+                    return {"items": items, "error": found.get("error")}
+
                 initial_items = await related_items()
                 evidence["related_items"] = initial_items
                 conversation = [{"role": "user", "content": json.dumps({
@@ -209,6 +267,10 @@ async def investigate(event, client, model, prompt):
                                 outcome = await related_items()
                             elif call.name == "search_host_items":
                                 outcome = await search_host_items(args.get("keyword"))
+                            elif call.name == "find_hosts":
+                                outcome = await find_hosts(args.get("keyword"), args.get("reason"))
+                            elif call.name == "other_host_items":
+                                outcome = await other_host_items(args.get("hostid"), args.get("keyword"), args.get("reason"))
                             elif call.name in ("item_history", "item_trend"):
                                 item_id = str(args.get("itemid") or "")
                                 if item_id not in item_map:
