@@ -119,10 +119,10 @@ def make_card(event, info=None, *, analysis=False, mute_info=None):
         occurred_time = valid_macro(event.get("event_time"))
         if occurred_date and occurred_time:
             lines.append("**发生时间**  " + occurred_date + " " + occurred_time)
-    detail = valid_macro(event.get("event_detail")) or valid_macro(event.get("latest_value"))
+    event_value_text = valid_macro(event.get("latest_value"))
     lines.extend([
         "**事件名称**  " + safe(event_name, 250),
-        "**事件详情**  " + safe(detail, 300),
+        "**事件数值**  " + safe(event_value_text, 300),
         "**事件 ID**  " + safe(event.get("event_id"), 40),
     ])
     link = zabbix_event_link(event)
