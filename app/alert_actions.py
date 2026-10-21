@@ -70,7 +70,7 @@ def handle_choose_mute(value, operator_open_id):
         {"tag": "action", "actions": buttons}]
     return True, "请选择屏蔽时长", card
 
-def handle_analyze_action(value, operator_open_id, message_id=None):
+def handle_analyze_action(value, operator_open_id, message_id=None, chat_id=None):
     if not _authorized(operator_open_id):
         return False, "仅飞书管理员可以触发 AI 分析"
     event = _event(value)
@@ -84,7 +84,7 @@ def handle_analyze_action(value, operator_open_id, message_id=None):
         return True, "此告警的 AI 分析已提交，请勿重复点击"
     try:
         Queue("ai-alerts", connection=redis).enqueue(
-            "app.worker.process_manual_analysis", event, message_id, job_timeout=360)
+            "app.worker.process_manual_analysis", event, message_id, chat_id, job_timeout=360)
     except Exception:
         redis.delete(key)
         log.exception("MANUAL_ANALYSIS_ENQUEUE_FAILED")

@@ -74,7 +74,8 @@ def on_card_action(data: P2CardActionTrigger) -> P2CardActionTriggerResponse:
             if ok:
                 return P2CardActionTriggerResponse({"toast":{"type":"success","content":message}, "card":{"type":"raw","data":card}})
         elif value.get("op") == "analyze_alert":
-            ok,message=handle_analyze_action(value,open_id,message_id)
+            ok,message=handle_analyze_action(value,open_id,message_id,
+                    getattr(context,"chat_id",None) or getattr(context,"open_chat_id",None))
             log.info("FEISHU_ANALYZE_ACTION success=%s",ok)
         else:
             ok,message=handle_mute_action(value,open_id)

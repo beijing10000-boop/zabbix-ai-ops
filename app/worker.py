@@ -349,16 +349,19 @@ if __name__ == "__main__":
     redis = Redis.from_url(os.getenv("REDIS_URL","redis://redis:6379/0"))
     Worker([Queue("ai-alerts", connection=redis)], connection=redis).work()
 
-async def analyze_on_demand(event, message_id):
+async def analyze_on_demand(event, message_id, chat_id=None):
     """Fault and recovery: reply with progress, update it, preserve threaded context."""
-    from .feishu_client import reply_card, update_card, get_message_chat_id
+    from .feishu_client import reply_card, update_card
     from .conversation_context import remember
     if not message_id or not str(message_id).startswith("om_"):
         raise ValueError("missing original Feishu message id")
     event_id = str(event.get("event_id") or "")
     is_recovery = str(event.get("event_value", "1")) == "0"
     subject = ("恢复事件" if is_recovery else "故障事件") + " " + event_id
-    question = subject + "：" + str(event.get("event_name") or "未知事件")
+    question = (subject + "：" + str(event.get("event_name") or "未知事件")
+                + "；主机：" + str(event.get("host_name") or "")
+                + "；IP：" + str(event.get("host_ip") or "")
+                + "；Host ID：" + str(event.get("host_id") or ""))
     update_event(event, ai_status="running")
     progress_id = None
     try:
@@ -386,7 +389,23 @@ async def analyze_on_demand(event, message_id):
         else:
             progress_id = await reply_card(message_id, "AI 分析结果", detail)
         try:
-            chat_id = await get_message_chat_id(message_id)
+            # A Feishu GET /im/v1/messages/{id} may return 400 even when
+            # reply and PATCH succeed. Use the verified delivery link instead.
+            if not chat_id:
+                from .main import connection
+                with connection() as db:
+                    rows = db.execute(
+                        "SELECT chat_id FROM alert_message_links WHERE event_id=? AND message_id=?",
+                        (event_id, message_id)).fetchall()
+                    if not rows:
+                        rows = db.execute(
+                            "SELECT DISTINCT chat_id FROM alert_message_links WHERE event_id=?",
+                            (event_id,)).fetchall()
+                if len(rows) == 1:
+                    chat_id = rows[0][0]
+                else:
+                    log.warning("ALERT_AI_CONTEXT_CHAT_AMBIGUOUS event_id=%s matches=%s",
+                                event_id, len(rows))
             if chat_id:
                 remember(chat_id, message_id, progress_id, question, detail, root_id=message_id)
                 log.info("ALERT_AI_CONTEXT_SAVED event_id=%s recovery=%s", event_id, is_recovery)
@@ -406,5 +425,5 @@ async def analyze_on_demand(event, message_id):
                 log.exception("ALERT_AI_FAILURE_CARD_UPDATE_FAILED event_id=%s", event_id)
         raise
 
-def process_manual_analysis(event, message_id):
-    return asyncio.run(analyze_on_demand(event, message_id))
+def process_manual_analysis(event, message_id, chat_id=None):
+    return asyncio.run(analyze_on_demand(event, message_id, chat_id))
