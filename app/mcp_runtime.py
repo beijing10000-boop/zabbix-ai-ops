@@ -65,6 +65,27 @@ def native_tools(remote_tools):
              "strict": False} for tool in remote_tools]
 
 
+
+DISCOVERY_TOOL = {"type":"function","name":"search_mcp_tools",
+    "description":"Search every available MCP tool by name and capability. Returns brief descriptions.",
+    "parameters":{"type":"object","properties":{"query":{"type":"string"},"limit":{"type":"integer"}},"required":["query"]},"strict":False}
+LOAD_TOOL = {"type":"function","name":"load_mcp_tools",
+    "description":"Activate MCP tools by exact names for subsequent calls. All available tools may be activated.",
+    "parameters":{"type":"object","properties":{"names":{"type":"array","items":{"type":"string"}}},"required":["names"]},"strict":False}
+
+def search_tool_catalog(tools, query, limit=8):
+    import re
+    terms = [x.lower() for x in re.findall(r"[\\w]+", str(query)) if len(x)>1]
+    matches = []
+    for t in tools:
+        name, desc = t.name.lower(), (t.description or "").lower()
+        score = sum(8 for x in terms if x in name) + sum(2 for x in terms if x in desc)
+        if not terms or score:
+            matches.append((score,t.name,t))
+    matches.sort(key=lambda v:(-v[0],v[1]))
+    return [{"name":t.name,"description":(t.description or "")[:160]}
+            for _,__,t in matches[:max(1,min(int(limit),12))]]
+
 async def run(prompt, question, *, client=None, model=None, context="", return_usage=False):
     """Conduct a bounded multi-round native-MCP investigation."""
     endpoint = read_setting("mcp_url")
@@ -87,6 +108,18 @@ async def run(prompt, question, *, client=None, model=None, context="", return_u
         result = await session.list_tools()
         definitions = native_tools(result.tools)
         available = {tool["name"] for tool in definitions}
+        tool_map = {tool["name"]: tool for tool in definitions}
+        mode = read_setting("ai_tool_loading") or "dynamic"
+        dynamic = mode != "full"
+        loaded = set()
+        catalog_names = [t.name for t in result.tools]
+        discovery_prompt = (
+            "\\n可以调用 search_mcp_tools 搜索任何 MCP 工具、load_mcp_tools 加载参数；"
+            "仅加载后的 MCP 工具可调用。全部可用工具名："
+            + ", ".join(catalog_names)
+        ) if dynamic else ""
+        log.info("MCP_TOOL_CATALOG mode=%s count=%s schema_chars=%s", mode, len(definitions),
+                 len(json.dumps(definitions,ensure_ascii=False)))
         if not available:
             raise RuntimeError("MCP 未返回任何工具")
         if client is None:
@@ -128,14 +161,14 @@ async def run(prompt, question, *, client=None, model=None, context="", return_u
                 log.exception("AI_TOKEN_TELEMETRY_SAVE_FAILED")
             result_usage = {**usage_totals, "available": usage_complete}
             return (text, result_usage) if return_usage else text
-        for round_number in range(profile["rounds"]):
+        for round_number in range(profile["rounds"] + (3 if dynamic else 0)):
             # Diagnostics are demand-driven: stop once the model has enough evidence.
             # All discovered native MCP tools remain available in every model round.
             if time.monotonic() >= deadline - 8:
                 break
             response = await client.responses.create(
-                model=model, instructions=prompt, input=conversation,
-                tools=definitions, timeout=min(45, max(8, int(deadline-time.monotonic()))))
+                model=model, instructions=prompt + discovery_prompt, input=conversation,
+                tools=([DISCOVERY_TOOL, LOAD_TOOL]+[tool_map[n] for n in sorted(loaded)] if dynamic else definitions), timeout=min(45, max(8, int(deadline-time.monotonic()))))
             track(response)
             round_counts = usage_counts(response)
             log.info("MCP_AGENT_ROUND profile=%s round=%s input=%s output=%s total=%s calls_so_far=%s",
@@ -156,8 +189,27 @@ async def run(prompt, question, *, client=None, model=None, context="", return_u
             for i, call in enumerate(calls):
                 began = time.monotonic()
                 raw_chars = 0
-                if call.name not in available:
+                if dynamic and call.name == "search_mcp_tools":
+                    try:
+                        args = json.loads(call.arguments or "{}")
+                        outcome = {"tools":search_tool_catalog(result.tools,args.get("query",""),args.get("limit",8))}
+                    except (ValueError, TypeError):
+                        outcome = {"error":"invalid search arguments"}
+                elif dynamic and call.name == "load_mcp_tools":
+                    try:
+                        args = json.loads(call.arguments or "{}")
+                        names = args.get("names",[])
+                        if not isinstance(names,list): raise ValueError("names must be list")
+                        names = names[:12]
+                        found = [n for n in names if isinstance(n,str) and n in available]
+                        loaded.update(found)
+                        outcome = {"loaded":found,"not_found":[n for n in names if n not in available]}
+                    except (ValueError, TypeError):
+                        outcome = {"error":"invalid tool names"}
+                elif call.name not in available:
                     outcome = {"error": "tool absent from MCP discovery"}
+                elif dynamic and call.name not in loaded:
+                    outcome = {"error":"tool not loaded; call load_mcp_tools first"}
                 elif executed >= profile["calls"] or i >= profile["per_round"] or time.monotonic() > deadline - 5:
                     outcome = {"error": "MCP call budget exhausted"}
                 else:
@@ -187,7 +239,7 @@ async def run(prompt, question, *, client=None, model=None, context="", return_u
                 conversation.append({"type": "function_call_output", "call_id": call.call_id,
                                      "output": result_body})
         response = await client.responses.create(
-            model=model, instructions=prompt + "\n工具预算已结束，请立即根据已有证据给出最终回答，不要编造事实。",
+            model=model, instructions=prompt + discovery_prompt + "\n工具预算已结束，请立即根据已有证据给出最终回答，不要编造事实。",
             input=conversation, tool_choice="none", timeout=35)
         track(response)
         counts = usage_counts(response)
