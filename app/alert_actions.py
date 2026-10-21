@@ -52,7 +52,7 @@ def handle_choose_mute(value, operator_open_id):
                          (72, "3天"), (168, "7天")):
         buttons.append({"tag": "button", "text": {"tag": "plain_text", "content": label},
             "type": "primary" if hours == 1 else "default",
-            "value": {"op": "mute_alert", "host_id": host, "trigger_id": trigger,
+            "value": {"op": "mute_alert", "event_id": str(event["event_id"]), "host_id": host, "trigger_id": trigger,
                       "hours": hours, "sig": action_signature(host, trigger, hours)}})
     card["config"]["update_multi"] = True
     card["elements"][-2:] = [
@@ -91,20 +91,16 @@ def card_after_mute(value, operator_open_id):
     trigger = str(value.get("trigger_id", ""))
     if not _authorized(operator_open_id):
         raise ValueError("not authorized")
+    event_id = str(value.get("event_id") or "")
+    if not event_id.isdigit():
+        raise ValueError("missing alert event id")
     with connection() as db:
-        row = db.execute("""SELECT event_json FROM alert_events
-            WHERE event_value='1' ORDER BY id DESC""").fetchall()
+        row = db.execute("SELECT event_json FROM alert_events WHERE event_id=? AND event_value='1'",
+                         (event_id,)).fetchone()
         mute = db.execute("SELECT expires_at FROM alert_mutes WHERE host_id=? AND trigger_id=?",
                           (host, trigger)).fetchone()
-    event = None
-    for item in row:
-        if not item[0]:
-            continue
-        candidate = json.loads(item[0])
-        if str(candidate.get("host_id")) == host and str(candidate.get("trigger_id")) == trigger:
-            event = candidate
-            break
-    if not event or not mute:
+    event = json.loads(row[0]) if row and row[0] else None
+    if not event or not mute or str(event.get("host_id")) != host or str(event.get("trigger_id")) != trigger:
         raise ValueError("original alert not found")
     now = datetime.now(ZoneInfo("Asia/Shanghai"))
     expires = datetime.fromtimestamp(mute[0], ZoneInfo("Asia/Shanghai"))
