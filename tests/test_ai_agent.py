@@ -44,13 +44,13 @@ def setup(monkeypatch, calls, final_text="分析完成"):
     monkeypatch.setattr(mcp_runtime,"read_setting",lambda k: {"mcp_url":"http://example.invalid/mcp","openai_api_key":"unit-test","openai_model":"test-model","openai_base_url":"https://example.invalid/v1"}.get(k,""))
     return client_session,captured
 
-def test_ten_calls_get_ten_outputs_but_only_eight_executed(monkeypatch):
+def test_ten_calls_get_ten_outputs_but_only_four_executed_in_standard(monkeypatch):
     calls=[Item("function_call","event_get",str(i)) for i in range(10)]
     m,requests=setup(monkeypatch,calls)
     assert asyncio.run(ai_agent.ask("状态?"))=="分析完成"
     outputs=[x for x in requests[1]["input"] if isinstance(x,dict) and x.get("type")=="function_call_output"]
     assert len(outputs)==10
-    assert m.call_tool.await_count==8
+    assert m.call_tool.await_count==4
     assert "budget exhausted" in outputs[-1]["output"]
 
 def test_disallowed_tool_is_not_executed(monkeypatch):
