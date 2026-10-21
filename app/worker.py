@@ -128,6 +128,14 @@ def make_card(event, info=None, *, analysis=False, mute_info=None):
     elements = [
         {"tag":"div", "text":{"tag":"lark_md", "content":"\n".join(lines)}}
     ]
+    # Summary is a top-level div; Feishu does not allow actions nested in columns.
+    if recovery:
+        status_text = "✅ **状态 · 已恢复**    请结合业务监控确认服务已恢复正常。"
+    elif analysis:
+        status_text = "✦ **AI 诊断**    根据 Zabbix 监控信息生成，请结合现场证据核验。"
+    else:
+        status_text = "● **状态 · 告警中**    查看事件来源，或点击 AI 分析获取排障建议。"
+    elements.append({"tag": "div", "text": {"tag": "lark_md", "content": status_text}})
     if not analysis:
         host_id = str(event.get("host_id") or "")
         trigger_id = str(event.get("trigger_id") or "")
