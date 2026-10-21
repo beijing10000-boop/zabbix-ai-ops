@@ -22,6 +22,28 @@ MAX_SECONDS = 110
 MAX_OUTPUT_CHARS = 14000
 
 
+def usage_counts(response):
+    """Token usage reported by the model provider; never estimate from text."""
+    usage = getattr(response, "usage", None)
+    if usage is None:
+        return None
+    def count(name):
+        value = usage.get(name) if isinstance(usage, dict) else getattr(usage, name, None)
+        try:
+            return max(0, int(value)) if value is not None else None
+        except (ValueError, TypeError):
+            return None
+    return {"input": count("input_tokens"), "output": count("output_tokens"),
+            "total": count("total_tokens")}
+
+
+def format_usage(usage):
+    if not usage or usage.get("available") is not True:
+        return "本轮 Token 消耗：模型未返回用量"
+    return ("本轮 Token 消耗：{:,}（输入 {:,} / 输出 {:,}）".format(
+        usage["total"], usage["input"], usage["output"]))
+
+
 def native_tools(remote_tools):
     """Expose the exact native function names and input schemas from MCP."""
     return [{"type": "function", "name": tool.name,
@@ -30,7 +52,7 @@ def native_tools(remote_tools):
              "strict": False} for tool in remote_tools]
 
 
-async def run(prompt, question, *, client=None, model=None, context=""):
+async def run(prompt, question, *, client=None, model=None, context="", return_usage=False):
     """Conduct a bounded multi-round native-MCP investigation."""
     endpoint = read_setting("mcp_url")
     if not endpoint:
@@ -59,18 +81,33 @@ async def run(prompt, question, *, client=None, model=None, context=""):
                          ("\n上下文：" + context[:12000] if context else "")}]
         deadline = time.monotonic() + MAX_SECONDS
         executed = 0
+        usage_totals = {"input": 0, "output": 0, "total": 0}
+        usage_complete = True
+        def track(response):
+            nonlocal usage_complete
+            counts = usage_counts(response)
+            if not counts or counts["input"] is None or counts["output"] is None:
+                usage_complete = False
+                return
+            for key in ("input", "output"):
+                usage_totals[key] += counts[key]
+            usage_totals["total"] += counts["total"] if counts["total"] is not None else counts["input"] + counts["output"]
+        def finish(text):
+            result_usage = {**usage_totals, "available": usage_complete}
+            return (text, result_usage) if return_usage else text
         for round_number in range(MAX_ROUNDS):
             if time.monotonic() >= deadline - 8:
                 break
             response = await client.responses.create(
                 model=model, instructions=prompt, input=conversation,
                 tools=definitions, timeout=min(45, max(8, int(deadline-time.monotonic()))))
+            track(response)
             output = list(response.output or [])
             conversation.extend(item.model_dump(exclude_none=True) for item in output)
             calls = [item for item in output if item.type == "function_call"]
             if not calls:
                 log.info("MCP_AGENT_DONE rounds=%s calls=%s", round_number+1, executed)
-                return (response.output_text or "").strip()
+                return finish((response.output_text or "").strip())
             for i, call in enumerate(calls):
                 if call.name not in available:
                     outcome = {"error": "tool absent from MCP discovery"}
@@ -97,5 +134,6 @@ async def run(prompt, question, *, client=None, model=None, context=""):
         response = await client.responses.create(
             model=model, instructions=prompt + "\n工具预算已结束，请立即根据已有证据给出最终回答，不要编造事实。",
             input=conversation, tool_choice="none", timeout=35)
+        track(response)
         log.info("MCP_AGENT_BUDGET_END calls=%s", executed)
-        return (response.output_text or "").strip()
+        return finish((response.output_text or "").strip())
