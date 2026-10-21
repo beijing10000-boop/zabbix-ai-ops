@@ -75,7 +75,7 @@ LOAD_TOOL = {"type":"function","name":"load_mcp_tools",
 
 def search_tool_catalog(tools, query, limit=8):
     import re
-    terms = [x.lower() for x in re.findall(r"[\\w]+", str(query)) if len(x)>1]
+    terms = [x.lower() for x in re.findall(r"[a-zA-Z0-9_]+|[^\\W\\d_]+", str(query)) if len(x)>1]
     matches = []
     for t in tools:
         name, desc = t.name.lower(), (t.description or "").lower()
