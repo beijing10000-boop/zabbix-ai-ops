@@ -76,3 +76,48 @@ def test_reply_to_older_branch_does_not_inherit_newer_answers(monkeypatch):
     assert len(payload["turns"]) == 2
     assert "回答B" not in ctx.format_context(payload)
     assert "告警172.20.2.101" in ctx.format_context(payload)
+
+def test_reply_to_analysis_in_progress_never_calls_ai(monkeypatch):
+    import asyncio
+    from app import qa_worker
+    fake = FakeRedis()
+    monkeypatch.setattr(ctx, "_client", lambda: fake)
+    ctx.mark_pending("oc_group", "om_progress")
+    replies = []
+    async def reply(message_id, title, body, template="blue"):
+        replies.append((title, body))
+        return "om_rejected"
+    async def forbidden_ai(*args, **kwargs):
+        raise AssertionError("AI must not run for a progress card")
+    monkeypatch.setattr(qa_worker, "reply_card", reply)
+    monkeypatch.setattr(qa_worker, "ask", forbidden_ai)
+    monkeypatch.setattr(qa_worker, "record_ai_question", lambda *args, **kwargs: None)
+    asyncio.run(qa_worker.execute("oc_group", "这台机器还有什么问题",
+                                  "om_new", parent_id="om_progress"))
+    assert replies == [("AI 分析中", "分析中，请勿重复分析")]
+
+
+def test_fifth_ai_answer_is_rejected_without_model_call(monkeypatch):
+    import asyncio
+    from app import qa_worker
+    fake = FakeRedis()
+    monkeypatch.setattr(ctx, "_client", lambda: fake)
+    previous = {"origin": "原始告警", "turns": []}
+    for i in range(4):
+        ctx.remember("oc_group", "om_q" + str(i), "om_A" + str(i),
+                     "问题" + str(i), "回答" + str(i), previous)
+        previous = ctx.recall("oc_group", "om_A" + str(i))
+    replies = []
+    async def reply(message_id, title, body, template="blue"):
+        replies.append((title, body))
+        return "om_rejected"
+    async def forbidden_ai(*args, **kwargs):
+        raise AssertionError("AI must not run past the four-answer limit")
+    monkeypatch.setattr(qa_worker, "reply_card", reply)
+    monkeypatch.setattr(qa_worker, "ask", forbidden_ai)
+    monkeypatch.setattr(qa_worker, "record_ai_question", lambda *args, **kwargs: None)
+    monkeypatch.setattr(qa_worker, "recall", ctx.recall)
+    monkeypatch.setattr(qa_worker, "is_pending", ctx.is_pending)
+    asyncio.run(qa_worker.execute("oc_group", "第五次提问",
+                                  "om_next", parent_id="om_A3"))
+    assert "关联消息超过5个" in replies[0][1]
