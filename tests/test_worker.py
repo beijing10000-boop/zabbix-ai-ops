@@ -266,3 +266,17 @@ def test_source_button_precedes_actions_for_problem_and_recovery():
         assert buttons[0]["url"].startswith("http")
     recovery_buttons=next(e["actions"] for e in recovery["elements"] if e["tag"]=="action")
     assert recovery_buttons[1]["value"]["event_value"]=="0"
+
+def test_latest_value_for_problem_and_recovery():
+    base={"event_id":"700001","trigger_id":"800001","host_id":"100001",
+          "severity":"2","event_name":"CPU high"}
+    problem=worker.make_card({**base,"event_value":"1","latest_value":"89.4 %"})
+    restored=worker.make_card({**base,"event_value":"0","latest_value":"31.2 %","recovery_value":"29 %"})
+    assert "**最新值**  89.4 %" in problem["elements"][0]["text"]["content"]
+    assert "**最新值**  31.2 %" in restored["elements"][0]["text"]["content"]
+    fallback=worker.make_card({**base,"event_value":"0","recovery_value":"21 %"})
+    assert "**最新值**  21 %" in fallback["elements"][0]["text"]["content"]
+    unknown=worker.make_card({**base,"event_value":"1","latest_value":"{ITEM.LASTVALUE1}"})
+    assert "**最新值**  未提供" in unknown["elements"][0]["text"]["content"]
+    zero=worker.make_card({**base,"event_value":"1","latest_value":"0"})
+    assert "**最新值**  0" in zero["elements"][0]["text"]["content"]

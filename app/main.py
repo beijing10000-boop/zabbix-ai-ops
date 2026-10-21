@@ -136,6 +136,7 @@ class Alert(BaseModel):
     recovery_date: str = ""
     recovery_time: str = ""
     recovery_value: str = ""
+    latest_value: str = ""
     event_duration: str = ""
     recovery_id: str = ""
     host_id: str = ""

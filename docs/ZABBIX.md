@@ -37,3 +37,19 @@ Webhook Secret 必须在 Web 管理台设置。不要在任何公共渠道共享
 - Worker 没有处理：检查 `docker compose logs -f alert-worker`。
 
 生产对接之前建议在隔离环境测试媒体类型和动作的具体 JSON 参数。
+
+
+## 飞书卡片最新值
+
+Webhook JSON 新增可选字段 `latest_value`，故障和恢复事件均可设置：
+
+```json
+{
+  "event_id": "{EVENT.ID}",
+  "event_value": "{EVENT.VALUE}",
+  "trigger_id": "{TRIGGER.ID}",
+  "latest_value": "{ITEM.LASTVALUE1}"
+}
+```
+
+在 Zabbix 告警媒介类型的 Webhook 参数中添加 `latest_value`，值使用 `{ITEM.LASTVALUE1}`。注意它表示触发器表达式中的第一个监控项的最近值，单位应由发送方提供；多监控项表达式未必对应用户期望的指标。对于恢复事件，Zabbix 如提供合适的 `recovery_value` 可作为兜底，优先级仍是 `latest_value`。对于已有未包含此字段的事件，卡片显示“未提供”而不虚构数值。修改 webhook 参数后应分别触发新故障和恢复告警检查宏展开效果。
