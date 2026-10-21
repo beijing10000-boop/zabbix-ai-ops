@@ -57,3 +57,12 @@ Webhook JSON 新增可选字段 `latest_value`，故障和恢复事件均可设�
 ## 飞书卡片事件详情
 
 在 Zabbix Webhook 参数里添加 `event_detail`，值设为 `{EVENT.OPDATA}`（触发器 Operational data），例如 `Current state: down (2)`。若触发器未设置 Operational data，请在触发器或触发器原型中配置，例如 `Current state: {ITEM.LASTVALUE1}`。需要确认故障和恢复通知均能展开宏；未提供 `event_detail` 时兼容使用原 `latest_value`（恢复还可回退 `recovery_value`）。
+
+
+## AI 告警分析：MCP 多轮只读调查
+
+自动 AI 分析和飞书按钮手动 AI 分析使用同一调查流程。首先读取 event_get、trigger_get、host_get 和 triggerids 定位的 item_get；模型可以继续请求以下受限工具：related_items、search_host_items（仅本告警 hostids）、item_history、item_trend（仅已验证 itemids）。
+
+限制：最多 12 次 MCP 查询、4 轮模型工具交互、每监控项最多 120 个历史点、趋势 24 小时、最多 8 个关联 item ID、总时间预算约 70 秒。历史查询按告警发生时间或恢复时间回溯；对 1 小时以上的需求应控制采样开销。若 MCP 未配置、查询失败或超预算，AI 仍可报告证据不足，禁止编造数值。MCP 返回的不可信文本只作为数据。日志可检查 \`ALERT_MCP_COMPLETED\` 和 \`ALERT_MCP_QUERY_FAILED\`，不记录 token。
+
+上线建议先运行 \`python3 -m compileall -q app\` 和 \`docker compose run --rm --no-deps alert-worker python -m pytest -q tests/test_alert_mcp_multiround.py\`（若镜像未安装 pytest，先在独立测试环境安装），再更新 alert-worker。监测 MCP 请求量、分析耗时及模型工具调用支持情况；部分兼容 OpenAI Responses API 的第三方模型不一定支持函数调用。
