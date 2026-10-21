@@ -63,16 +63,22 @@ def on_card_action(data: P2CardActionTrigger) -> P2CardActionTriggerResponse:
             value=json.loads(value)
         operator=getattr(event,"operator",None)
         open_id=getattr(operator,"open_id",None) or getattr(operator,"operator_id",None)
+        context=getattr(event,"context",None)
+        message_id=getattr(context,"open_message_id",None)
         if value.get("op") == "choose_mute":
             ok, message, card = handle_choose_mute(value, open_id)
             if ok:
                 return P2CardActionTriggerResponse({"toast": {"type": "info", "content": message}, "card": {"type": "raw", "data": card}})
         elif value.get("op") == "analyze_alert":
-            ok,message=handle_analyze_action(value,open_id)
+            ok,message=handle_analyze_action(value,open_id,message_id)
             log.info("FEISHU_ANALYZE_ACTION success=%s",ok)
         else:
             ok,message=handle_mute_action(value,open_id)
             log.info("FEISHU_MUTE_ACTION success=%s",ok)
+            if ok:
+                from .alert_actions import card_after_mute
+                card=card_after_mute(value,open_id)
+                return P2CardActionTriggerResponse({"toast":{"type":"success","content":"暂时屏蔽成功"},"card":{"type":"raw","data":card}})
         return P2CardActionTriggerResponse({
             "toast":{"type":"success" if ok else "error","content":message}
         })
