@@ -331,6 +331,7 @@ def process_alert(event):
     return asyncio.run(handle_alert(event))
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     redis = Redis.from_url(os.getenv("REDIS_URL","redis://redis:6379/0"))
     Worker([Queue("ai-alerts", connection=redis)], connection=redis).work()
 
