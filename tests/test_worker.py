@@ -275,8 +275,8 @@ def test_latest_value_for_problem_and_recovery():
     restored=worker.make_card({**base,"event_value":"0","latest_value":"31.2 %","recovery_value":"29 %"})
     assert "**事件详情**  89.4 %" in problem["elements"][0]["text"]["content"]
     assert "**事件详情**  31.2 %" in restored["elements"][0]["text"]["content"]
-    fallback=worker.make_card({**base,"event_value":"0","recovery_value":"21 %"})
-    assert "**事件详情**  21 %" in fallback["elements"][0]["text"]["content"]
+    fallback=worker.make_card({**base,"event_value":"0","recovery_value":"0"})
+    assert "**事件详情**  未提供" in fallback["elements"][0]["text"]["content"]
     unknown=worker.make_card({**base,"event_value":"1","latest_value":"{ITEM.LASTVALUE1}"})
     assert "**事件详情**  未提供" in unknown["elements"][0]["text"]["content"]
     zero=worker.make_card({**base,"event_value":"1","latest_value":"0"})
@@ -289,3 +289,8 @@ def test_event_detail_overrides_latest_value():
     assert "**事件详情**  2" not in card["elements"][0]["text"]["content"]
     recovery=worker.make_card({**event,"event_value":"0","event_detail":"Current state: up (1)"})
     assert "**事件详情**  Current state: up (1)" in recovery["elements"][0]["text"]["content"]
+
+
+def test_recovery_status_is_not_event_detail():
+    card=worker.make_card({"event_id":"6190507","event_value":"0","recovery_value":"0","event_detail":""})
+    assert "**事件详情**  未提供" in card["elements"][0]["text"]["content"]
