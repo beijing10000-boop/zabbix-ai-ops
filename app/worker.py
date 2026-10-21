@@ -334,8 +334,6 @@ async def handle_alert(event):
         await notify(make_card(event,analysis,analysis=True))
         update_event(event, ai_status="success")
     except Exception:
-        if chat_id:
-            clear_pending(chat_id, progress_id)
         update_event(event, ai_status="failed")
         log.exception("AI_ANALYSIS_DELIVERY_FAILED event_id=%s",event.get("event_id"))
         raise
