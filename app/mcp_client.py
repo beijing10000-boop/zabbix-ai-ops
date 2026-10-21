@@ -162,7 +162,7 @@ async def investigate(event, client, model, prompt):
                     keyword = str(keyword or "").strip()
                     if not host_id.isdigit() or len(keyword) < 2 or len(keyword) > 40:
                         return {"error": "invalid host or keyword"}
-                    if not re.fullmatch(r"[\\w\\u4e00-\\u9fff ._-]+", keyword):
+                    if not re.fullmatch(r"[\w\u4e00-\u9fff ._-]+", keyword):
                         return {"error": "invalid search term"}
                     result = await query("item_get", {
                         "hostids": [host_id], "search": {"name": keyword},
