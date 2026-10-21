@@ -9,6 +9,7 @@ def test_choose_mute_requires_admin_and_offers_five_durations(monkeypatch):
     event = {"event_id": "884422", "trigger_id": "202", "host_id": "101",
              "event_value": "1", "severity": "2", "event_name": "CPU high"}
     with connection() as db:
+        db.execute("INSERT OR REPLACE INTO settings(key,value,secret) VALUES (\'feishu_admin_open_ids\',\'ou_admin\',0)")
         db.execute("""INSERT OR REPLACE INTO alert_events
             (event_id,event_value,event_name,host_name,severity,event_json)
             VALUES (?, '1', 'CPU high', 'server', 2, ?)""",
