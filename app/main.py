@@ -255,6 +255,8 @@ def update_settings(body: SettingsUpdate):
         raise HTTPException(status_code=422, detail=f"invalid settings: {sorted(invalid)}")
     if any(not isinstance(v, str) or len(v) > 12000 for v in body.values.values()):
         raise HTTPException(status_code=422, detail="invalid value")
+    if "ai_tool_loading" in body.values and body.values["ai_tool_loading"] not in ("dynamic", "full"):
+        raise HTTPException(status_code=422, detail="MCP工具加载模式必须为 dynamic 或 full")
     if "ai_analysis_profile" in body.values and body.values["ai_analysis_profile"] not in ("quick", "standard", "deep"):
         raise HTTPException(status_code=422, detail="分析档位必须为 quick、standard 或 deep")
     if "feishu_admin_open_ids" in body.values:
