@@ -139,19 +139,16 @@ def make_card(event, info=None, *, analysis=False, mute_info=None):
         if host_id.isdigit() and trigger_id.isdigit() and event_id.isdigit():
             from .alert_mute import action_signature
             elements.append({"tag": "hr"})
-            elements.append({"tag": "column_set", "flex_mode": "stretch", "columns": [
-                {"tag": "column", "width": "auto", "elements": [
-                    {"tag": "div", "text": {"tag": "lark_md", "content": "**告警操作**"}}]},
-                {"tag": "column", "width": "auto", "elements": [
-                    {"tag": "action", "actions": [
-                        {"tag": "button", "text": {"tag": "plain_text", "content": "🔕 暂时屏蔽"},
-                         "type": "default", "value": {"op": "choose_mute", "event_id": event_id,
-                             "trigger_id": trigger_id, "sig": action_signature(event_id, trigger_id, 0)}}]}]},
-                {"tag": "column", "width": "auto", "elements": [
-                    {"tag": "action", "actions": [
-                        {"tag": "button", "text": {"tag": "plain_text", "content": "🤖 AI分析"},
-                         "type": "primary", "value": {"op": "analyze_alert", "event_id": event_id,
-                             "trigger_id": trigger_id, "sig": action_signature(event_id, trigger_id, 0)}}]}]}
+            # Feishu v1 cards prohibit action components inside column_set.
+            # Keep the two buttons in one top-level action row.
+            elements.append({"tag": "div", "text": {"tag": "lark_md", "content": "**告警操作**"}})
+            elements.append({"tag": "action", "actions": [
+                {"tag": "button", "text": {"tag": "plain_text", "content": "🔕 暂时屏蔽"},
+                 "type": "default", "value": {"op": "choose_mute", "event_id": event_id,
+                     "trigger_id": trigger_id, "sig": action_signature(event_id, trigger_id, 0)}},
+                {"tag": "button", "text": {"tag": "plain_text", "content": "🤖 AI分析"},
+                 "type": "primary", "value": {"op": "analyze_alert", "event_id": event_id,
+                     "trigger_id": trigger_id, "sig": action_signature(event_id, trigger_id, 0)}}
             ]})
     if mute_info and not recovery:
         elements.append({"tag": "hr"})
