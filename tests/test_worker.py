@@ -324,7 +324,7 @@ def test_token_footer_separate_from_body_in_feishu_card():
     assert card["elements"][1]["tag"] == "hr"
     assert "Token 消耗" not in card["elements"][0]["text"]["content"]
     assert "color='grey'" in card["elements"][2]["text"]["content"]
-    assert "1,234" in card["elements"][2]["text"]["content"]
+    assert "1,234" in card["elements"][2]["elements"][0]["content"]
 
 def test_native_feishu_token_footer():
     from app.feishu_client import make_card
