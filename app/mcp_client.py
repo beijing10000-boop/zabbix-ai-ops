@@ -25,6 +25,10 @@ DEFINITIONS = [
     {"type": "function", "name": "related_items",
      "description": "Find up to 8 monitoring items linked to this alert's trigger; includes last values and units.",
      "parameters": {"type": "object", "properties": {}}, "strict": False},
+    {"type": "function", "name": "search_host_items",
+     "description": "Find up to 8 extra related metrics on the SAME Zabbix host, for example interference or client count. Search by a brief metric name.",
+     "parameters": {"type": "object", "properties": {"keyword": {"type": "string"}},
+                    "required": ["keyword"], "additionalProperties": False}, "strict": False},
     {"type": "function", "name": "item_history",
      "description": "Inspect up to 120 raw history points for ONE verified related item, within 24h of the alert. history type is derived from item metadata.",
      "parameters": {"type": "object", "properties": {
@@ -154,6 +158,28 @@ async def investigate(event, client, model, prompt):
                     return {"items": list(item_map.values()), "error": result.get("error"),
                             "raw_data": result.get("data", []) if not item_map else []}
 
+                async def search_host_items(keyword):
+                    keyword = str(keyword or "").strip()
+                    if not host_id.isdigit() or len(keyword) < 2 or len(keyword) > 40:
+                        return {"error": "invalid host or keyword"}
+                    if not re.fullmatch(r"[\\w\\u4e00-\\u9fff ._-]+", keyword):
+                        return {"error": "invalid search term"}
+                    result = await query("item_get", {
+                        "hostids": [host_id], "search": {"name": keyword},
+                        "output": "extend", "limit": MAX_ITEMS})
+                    added = []
+                    for item in result.get("records", [])[:MAX_ITEMS]:
+                        item_id = str(item.get("itemid", ""))
+                        if item_id.isdigit() and str(item.get("hostid")) == host_id:
+                            record = {k: item.get(k) for k in (
+                                "itemid", "hostid", "name", "key_", "lastvalue",
+                                "units", "value_type", "lastclock")}
+                            # Bound total accessible items including the primary trigger items.
+                            if item_id in item_map or len(item_map) < MAX_ITEMS:
+                                item_map[item_id] = record
+                                added.append(record)
+                    return {"items": added, "error": result.get("error")}
+
                 initial_items = await related_items()
                 evidence["related_items"] = initial_items
                 conversation = [{"role": "user", "content": json.dumps({
@@ -181,6 +207,8 @@ async def investigate(event, client, model, prompt):
                                 raise ValueError("invalid arguments")
                             if call.name == "related_items":
                                 outcome = await related_items()
+                            elif call.name == "search_host_items":
+                                outcome = await search_host_items(args.get("keyword"))
                             elif call.name in ("item_history", "item_trend"):
                                 item_id = str(args.get("itemid") or "")
                                 if item_id not in item_map:
