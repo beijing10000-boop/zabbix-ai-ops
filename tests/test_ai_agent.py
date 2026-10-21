@@ -4,7 +4,7 @@ import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
-from app import ai_agent
+from app import ai_agent, mcp_runtime
 
 class Item:
     def __init__(self, kind, name="", call_id="", arguments="{}"):
@@ -38,9 +38,10 @@ def setup(monkeypatch, calls, final_text="分析完成"):
         "mcp_url":"http://example.invalid/mcp","openai_api_key":"unit-test",
         "openai_model":"test-model","openai_base_url":"https://example.invalid/v1"
     }.get(k, ""))
-    monkeypatch.setattr(ai_agent,"streamablehttp_client",lambda *a,**k:Context(("read","write",None)))
-    monkeypatch.setattr(ai_agent,"ClientSession",lambda *a,**k:Context(client_session))
-    monkeypatch.setattr(ai_agent,"AsyncOpenAI",lambda **kwargs:Context(model))
+    monkeypatch.setattr(mcp_runtime,"streamablehttp_client",lambda *a,**k:Context(("read","write",None)))
+    monkeypatch.setattr(mcp_runtime,"ClientSession",lambda *a,**k:Context(client_session))
+    monkeypatch.setattr(mcp_runtime,"AsyncOpenAI",lambda **kwargs:Context(model))
+    monkeypatch.setattr(mcp_runtime,"read_setting",lambda k: {"mcp_url":"http://example.invalid/mcp","openai_api_key":"unit-test","openai_model":"test-model","openai_base_url":"https://example.invalid/v1"}.get(k,""))
     return client_session,captured
 
 def test_ten_calls_get_ten_outputs_but_only_eight_executed(monkeypatch):
@@ -50,17 +51,24 @@ def test_ten_calls_get_ten_outputs_but_only_eight_executed(monkeypatch):
     outputs=[x for x in requests[1]["input"] if isinstance(x,dict) and x.get("type")=="function_call_output"]
     assert len(outputs)==10
     assert m.call_tool.await_count==8
-    assert "too many tool calls" in outputs[-1]["output"]
+    assert "budget exhausted" in outputs[-1]["output"]
 
 def test_disallowed_tool_is_not_executed(monkeypatch):
     m,requests=setup(monkeypatch,[Item("function_call","host_delete","x")])
     asyncio.run(ai_agent.ask("查看主机"))
     assert m.call_tool.await_count==0
     output=[x for x in requests[1]["input"] if isinstance(x,dict) and x.get("type")=="function_call_output"]
-    assert json.loads(output[0]["output"])=={"error":"tool not allowed"}
+    assert json.loads(output[0]["output"])=={"error":"tool absent from MCP discovery"}
 
 def test_model_finishes_without_calls(monkeypatch):
     m,requests=setup(monkeypatch,[])
     # Responses mock returns no calls immediately, so empty output_text fallback
     assert asyncio.run(ai_agent.ask("查询"))=="模型未返回可显示的分析结论"
     assert m.call_tool.await_count==0
+
+
+def test_native_tools_are_not_filtered():
+    remote=[SimpleNamespace(name="graph_get",description="graph",inputSchema={"type":"object","properties":{"graphids":{"type":"array"}}}), SimpleNamespace(name="custom_mcp_tool",description="",inputSchema={"type":"object","properties":{}})]
+    definitions=mcp_runtime.native_tools(remote)
+    assert [tool["name"] for tool in definitions]==["graph_get","custom_mcp_tool"]
+    assert definitions[0]["parameters"]==remote[0].inputSchema
