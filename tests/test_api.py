@@ -108,3 +108,13 @@ def test_deprecated_settings_are_rejected_and_hidden():
     assert "ai_prompt" not in result
     assert "ai_min_severity" in result
     assert "ai_alert_prompt" in result and "ai_qa_prompt" in result
+
+def test_mcp_tool_loading_setting_allowed_and_validated():
+    from app.main import ALLOWED, DEFAULTS
+    assert "ai_tool_loading" in ALLOWED
+    assert DEFAULTS["ai_tool_loading"] == "dynamic"
+    h = {"Authorization": "Bearer test-admin"}
+    assert client.put("/api/v1/settings", headers=h, json={"values":{"ai_tool_loading":"full"}}).status_code == 200
+    assert client.get("/api/v1/settings", headers=h).json()["ai_tool_loading"] == "full"
+    assert client.put("/api/v1/settings", headers=h, json={"values":{"ai_tool_loading":"invalid"}}).status_code == 422
+    assert client.put("/api/v1/settings", headers=h, json={"values":{"ai_tool_loading":"dynamic"}}).status_code == 200
