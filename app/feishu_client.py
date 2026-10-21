@@ -7,9 +7,24 @@ log = logging.getLogger(__name__)
 ROOT = "https://open.feishu.cn/open-apis"
 
 def make_card(title, text, template="blue"):
+    """Render token consumption as a separated muted footer, not body copy."""
+    body = str(text)
+    token_line = None
+    separator = "\n\n---\n"
+    if separator in body:
+        before, after = body.rsplit(separator, 1)
+        if after.startswith("本轮 Token 消耗：") and "\n" not in after:
+            body, token_line = before, after
+    elements = [{"tag": "div", "text": {"tag": "lark_md", "content": body[:11000]}}]
+    if token_line:
+        elements.extend([
+            {"tag": "hr"},
+            {"tag": "div", "text": {"tag": "lark_md",
+             "content": "<font color='grey'>◉ " + token_line[:220] + "</font>"}},
+        ])
     return {"config":{"wide_screen_mode":True,"update_multi":True},
             "header":{"title":{"tag":"plain_text","content":title},"template":template},
-            "elements":[{"tag":"div","text":{"tag":"lark_md","content":str(text)[:11000]}}]}
+            "elements":elements}
 
 async def request(client, method, url, token=None, **kwargs):
     headers = {"Authorization": "Bearer "+token} if token else {}
