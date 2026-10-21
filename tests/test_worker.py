@@ -309,3 +309,10 @@ def test_event_detail_overrides_latest_value():
 def test_recovery_status_is_not_event_detail():
     card=worker.make_card({"event_id":"6190507","event_value":"0","recovery_value":"0","event_detail":""})
     assert "**事件数值**  未提供" in card["elements"][0]["text"]["content"]
+
+def test_automatic_analysis_card_shows_token_usage():
+    event={"event_id":"123","severity":"4","event_value":"1"}
+    info={"cause":"CPU高","action":"查看指标","analysis":"历史趋势",
+          "_token_usage":{"input":750,"output":250,"total":1000,"available":True}}
+    card=worker.make_card(event,info,analysis=True)
+    assert "本轮 Token 消耗：1,000（输入 750 / 输出 250）" in str(card)
