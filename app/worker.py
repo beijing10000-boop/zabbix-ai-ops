@@ -257,6 +257,13 @@ def initial_info(event):
     }
 
 
+def store_alert_usage(event, usage):
+    from .main import connection, save_token_usage
+    with connection() as db:
+        save_token_usage(db, "alert_events", "event_id=? AND event_value=?",
+                         (str(event.get("event_id")), str(event.get("event_value", "1"))), usage)
+
+
 def update_event(event, **states):
     from .main import connection
     allowed = {"notify_status", "ai_status"}
@@ -316,6 +323,7 @@ async def handle_alert(event):
     update_event(event, ai_status="running")
     try:
         analysis = await analyze(event)
+        store_alert_usage(event, analysis.get("_token_usage"))
     except Exception as exc:
         update_event(event, ai_status="failed")
         log.warning("ALERT_ANALYZE_FAILED event_id=%s error=%s", event.get("event_id"), type(exc).__name__)
@@ -362,6 +370,7 @@ async def analyze_on_demand(event, message_id):
         log.exception("ALERT_AI_PROGRESS_FAILED event_id=%s", event_id)
     try:
         result = await analyze(event)
+        store_alert_usage(event, result.get("_token_usage"))
         detail = "\n".join("**" + label + "**\n" + safe(result.get(field), size)
                            for label, field, size in (("故障原因", "cause", 120),
                                                       ("处理建议", "action", 160),
