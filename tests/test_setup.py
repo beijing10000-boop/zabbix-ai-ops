@@ -29,7 +29,10 @@ def test_setup_never_overwrites_existing_admins(monkeypatch):
     monkeypatch.setattr(main,"ADMIN_TOKEN","test-admin")
     client=TestClient(app)
     with connection() as db:
-        db.execute("DELETE FROM settings WHERE key='web_public_host'")
+        db.execute("DELETE FROM settings WHERE key IN ('web_public_host','feishu_admin_open_ids','lark_app_secret')")
+        db.execute("INSERT INTO settings(key,value,secret) VALUES ('feishu_admin_open_ids','ou_first_admin',0)")
+        from app.main import cipher
+        db.execute("INSERT INTO settings(key,value,secret) VALUES ('lark_app_secret',?,1)",(cipher().encrypt(b"testing-app-secret").decode(),))
     payload={"bootstrap_token":"test-admin","web_protocol":"http",
              "web_public_host":"172.20.200.93:8088",
              "lark_app_id":"cli_12345678","lark_app_secret":"new-secret-value",
