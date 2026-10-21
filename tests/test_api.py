@@ -92,3 +92,19 @@ def test_ai_question_metrics_separate_from_alerts():
     assert len(found) == 1 and found[0]["status"] == "success"
     assert found[0]["source"] == "feishu"
     assert client.get("/api/v1/qa-events").status_code == 401
+
+def test_deprecated_settings_are_rejected_and_hidden():
+    from app.main import ALLOWED, DEFAULTS
+    assert "min_severity" not in ALLOWED
+    assert "ai_prompt" not in ALLOWED
+    assert "min_severity" not in DEFAULTS
+    h={"Authorization":"Bearer test-admin"}
+    assert client.put("/api/v1/settings",headers=h,json={
+        "values":{"min_severity":"3"}}).status_code==422
+    assert client.put("/api/v1/settings",headers=h,json={
+        "values":{"ai_prompt":"old"}}).status_code==422
+    result=client.get("/api/v1/settings",headers=h).json()
+    assert "min_severity" not in result
+    assert "ai_prompt" not in result
+    assert "ai_min_severity" in result
+    assert "ai_alert_prompt" in result and "ai_qa_prompt" in result

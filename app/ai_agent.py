@@ -45,7 +45,7 @@ async def ask(question, extra_context=""):
              "parameters":t.inputSchema or {"type":"object","properties":{}},
              "strict":False} for t in available.values()
         ]
-        custom = read_setting("ai_qa_prompt") or read_setting("ai_prompt")
+        custom = read_setting("ai_qa_prompt")
         prompt = SYSTEM + ("\n补充要求：" + custom if custom else "")
         history = [{"role":"user","content": question[:3000] +
                     ("\n参考上下文：" + extra_context[:11500] if extra_context else "")}]
