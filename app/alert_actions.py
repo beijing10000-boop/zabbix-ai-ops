@@ -55,7 +55,12 @@ def handle_choose_mute(value, operator_open_id):
             "value": {"op": "mute_alert", "event_id": str(event["event_id"]), "host_id": host, "trigger_id": trigger,
                       "hours": hours, "sig": action_signature(host, trigger, hours)}})
     card["config"]["update_multi"] = True
-    card["elements"][-2:] = [
+    # Replace exactly the action row, not positional trailing card elements.
+    actions = card["elements"]
+    index = next((i for i, item in enumerate(actions) if item.get("tag") == "column_set"), -1)
+    if index < 0:
+        return False, "告警卡片缺少操作区", None
+    actions[index:index + 1] = [
         {"tag": "div", "text": {"tag": "lark_md", "content": "**选择暂时屏蔽时长**"}},
         {"tag": "action", "actions": buttons}]
     return True, "请选择屏蔽时长", card
