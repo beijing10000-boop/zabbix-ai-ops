@@ -8,7 +8,7 @@ import lark_oapi as lark
 from lark_oapi.api.im.v1 import P2ImMessageReceiveV1
 from lark_oapi.event.callback.model.p2_card_action_trigger import P2CardActionTrigger, P2CardActionTriggerResponse
 from .alert_mute import handle_mute_action
-from .alert_actions import handle_analyze_action, handle_choose_mute
+from .alert_actions import handle_analyze_action, handle_choose_mute, handle_unmute_action
 from .main import read_setting, REDIS_URL
 
 log = logging.getLogger(__name__)
@@ -69,6 +69,10 @@ def on_card_action(data: P2CardActionTrigger) -> P2CardActionTriggerResponse:
             ok, message, card = handle_choose_mute(value, open_id)
             if ok:
                 return P2CardActionTriggerResponse({"toast": {"type": "info", "content": message}, "card": {"type": "raw", "data": card}})
+        elif value.get("op") == "unmute_alert":
+            ok,message,card=handle_unmute_action(value,open_id)
+            if ok:
+                return P2CardActionTriggerResponse({"toast":{"type":"success","content":message}, "card":{"type":"raw","data":card}})
         elif value.get("op") == "analyze_alert":
             ok,message=handle_analyze_action(value,open_id,message_id)
             log.info("FEISHU_ANALYZE_ACTION success=%s",ok)
