@@ -19,8 +19,8 @@ def make_card(title, text, template="blue"):
     if token_line:
         elements.extend([
             {"tag": "hr"},
-            {"tag": "div", "text": {"tag": "lark_md",
-             "content": "<font color='grey'>◉ " + token_line[:220] + "</font>"}},
+            {"tag": "note", "elements": [{"tag": "plain_text",
+                "content": "◉ " + token_line[:220]}]},
         ])
     return {"config":{"wide_screen_mode":True,"update_multi":True},
             "header":{"title":{"tag":"plain_text","content":title},"template":template},
