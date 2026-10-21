@@ -1,6 +1,6 @@
 
 let csrf='',settings={},currentUser={};
-const title={dashboard:'总览仪表盘',config:'系统配置',debug:'连接调试',ask:'AI 诊断助手',logs:'运行日志'};
+const title={dashboard:'总览仪表盘',config:'系统配置',debug:'连接调试',ask:'AI 诊断助手',logs:'任务与审计'};
 const configGroups=[
   {name:'平台与访问',keys:['web_protocol','web_public_host']},
   {name:'AI 模型与提示词',keys:['openai_base_url','openai_model','openai_api_key','ai_alert_prompt','ai_qa_prompt']},
@@ -27,7 +27,43 @@ async function refreshStatus(){refreshMetrics();const out=document.getElementByI
 async function testMcp(){const out=document.getElementById('debug-output');out.textContent='正在检查 MCP...';try{out.textContent=JSON.stringify(await api('/api/v1/test/mcp',{method:'POST'}),null,2)}catch(e){out.textContent='测试失败：'+e.message}}
 async function testAi(){const out=document.getElementById('debug-output');out.textContent='正在调用 AI 模型...';try{out.textContent=JSON.stringify(await api('/api/v1/test/ai',{method:'POST'}),null,2)}catch(e){out.textContent='测试失败：'+e.message}}
 async function askAi(){const b=document.getElementById('ask-btn'),out=document.getElementById('ask-answer'),question=document.getElementById('ask-question').value.trim();if(!question){out.textContent='请输入问题';return}b.disabled=true;out.textContent='正在查询 Zabbix MCP 并分析…';try{const r=await api('/api/v1/ask',{method:'POST',body:JSON.stringify({question})});out.textContent=r.answer||'模型未返回分析'}catch(e){out.textContent='问答失败：'+e.message}finally{b.disabled=false}}
-async function loadLogs(){try{const r=await api('/api/v1/logs');document.getElementById('queue-info').textContent=JSON.stringify(r.queues);document.getElementById('failed-jobs').textContent=JSON.stringify(r.failed_jobs,null,2);document.getElementById('log-body').replaceChildren(...r.audit.map(row=>{const tr=document.createElement('tr');[row.time,row.action,row.key].forEach(v=>{const td=document.createElement('td');td.textContent=v||'';tr.append(td)});return tr}))}catch(e){document.getElementById('failed-jobs').textContent='读取失败：'+e.message}}
+const TASK_NAMES={'ai-alerts':'告警处理','ai-questions':'AI 问答','ai-changes':'变更任务'};
+const AUDIT_NAMES={alert_mute_feishu:'暂时屏蔽',alert_unmute_feishu:'解除屏蔽',settings_update:'修改系统配置',feishu_login:'飞书登录'};
+function renderCell(value){const td=document.createElement('td');td.textContent=String(value??'—');return td}
+function emptyTable(body,message,columns){const tr=document.createElement('tr');const td=renderCell(message);td.colSpan=columns;td.className='task-empty';tr.append(td);body.append(tr)}
+async function loadLogs(){
+  const queueBox=document.getElementById('queue-info');
+  const failedBody=document.getElementById('failed-jobs');
+  const auditBody=document.getElementById('log-body');
+  const status=document.getElementById('task-load-status');
+  queueBox.replaceChildren();failedBody.replaceChildren();auditBody.replaceChildren();
+  status.textContent='正在加载任务与审计数据…';
+  try {
+    const data=await api('/api/v1/logs');
+    const queues=data.queues||{};
+    for(const name of ['ai-alerts','ai-questions','ai-changes']){
+      const q=queues[name]||{};
+      const card=document.createElement('div');card.className='task-queue-card';
+      const title=document.createElement('div');title.className='task-queue-title';title.textContent=TASK_NAMES[name]||name;
+      const code=document.createElement('div');code.className='task-queue-code';code.textContent=name;
+      const counts=document.createElement('div');counts.className='task-queue-counts';
+      for(const [label,key] of [['等待任务','queued'],['历史失败','failed']]){
+        const cell=document.createElement('div');cell.className='task-queue-metric';
+        const num=document.createElement('strong');num.textContent=Number.isFinite(Number(q[key]))?String(q[key]):'—';
+        if(key==='failed'&&Number(q[key])>0)num.className='task-warning';
+        const nameEl=document.createElement('span');nameEl.textContent=label;
+        cell.append(num,nameEl);counts.append(cell);
+      }
+      card.append(title,code,counts);queueBox.append(card);
+    }
+    const jobs=Array.isArray(data.failed_jobs)?data.failed_jobs:[];
+    if(jobs.length){for(const job of jobs){const tr=document.createElement('tr');tr.append(renderCell(TASK_NAMES[job.queue]||job.queue),renderCell(job.id));failedBody.append(tr)}}else emptyTable(failedBody,'暂无失败任务',2);
+    const audits=Array.isArray(data.audit)?data.audit:[];
+    if(audits.length){for(const row of audits){const tr=document.createElement('tr');tr.append(renderCell(row.time),renderCell(AUDIT_NAMES[row.action]||row.action),renderCell(row.key));auditBody.append(tr)}}else emptyTable(auditBody,'暂无审计记录',3);
+    status.textContent=data.error?'队列状态读取失败：'+data.error:'已更新 · 共 '+jobs.length+' 条失败任务记录、'+audits.length+' 条审计记录';
+  }catch(e){status.textContent='加载失败：'+e.message;emptyTable(failedBody,'无法读取失败任务',2);emptyTable(auditBody,'无法读取审计记录',3)}
+}
+
 bootstrap();
 
 /* Centralized event registration; legacy inline handlers removed. */

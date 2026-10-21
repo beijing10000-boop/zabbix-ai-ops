@@ -22,3 +22,21 @@
 [data-ui-style="8"]{margin-bottom:18px}
 [data-ui-style="9"]{margin:0 0 22px;background:#f7f9ff}
 [data-ui-style="10"]{margin-top:25px}
+
+/* Task & audit page: calm summary cards and clean operational tables. */
+.task-toolbar{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.task-toolbar h2{margin-bottom:6px}
+.task-queue-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-top:19px}
+.task-queue-card{min-width:0;border:1px solid var(--separator);border-radius:16px;background:#fafafd;padding:18px}
+.task-queue-title{font-weight:720;font-size:15px;color:var(--label)}
+.task-queue-code{color:var(--label-2);font-size:11px;margin-top:4px}
+.task-queue-counts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:18px}
+.task-queue-metric{display:flex;flex-direction:column;gap:3px}
+.task-queue-metric strong{font-size:26px;line-height:1.2;font-variant-numeric:tabular-nums}
+.task-queue-metric span{font-size:12px;color:var(--label-2)}
+.task-warning{color:#b7791f}
+.task-empty{color:var(--label-2);text-align:center;padding:24px!important}
+.table-scroll{overflow-x:auto;margin-top:14px}
+#failed-jobs td:last-child{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;overflow-wrap:anywhere}
+#task-load-status{margin-top:10px}
+@media(max-width:900px){.task-queue-grid{grid-template-columns:1fr}}
