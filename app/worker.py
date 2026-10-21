@@ -332,8 +332,12 @@ async def handle_alert(event):
         return {"event_id":event["event_id"],"notified":True,"diagnosed":False,"ai_failed":True}
     try:
         await notify(make_card(event,analysis,analysis=True))
+        if chat_id:
+            clear_pending(chat_id, progress_id)
         update_event(event, ai_status="success")
     except Exception:
+        if chat_id:
+            clear_pending(chat_id, progress_id)
         update_event(event, ai_status="failed")
         log.exception("AI_ANALYSIS_DELIVERY_FAILED event_id=%s",event.get("event_id"))
         raise
@@ -352,7 +356,7 @@ if __name__ == "__main__":
 async def analyze_on_demand(event, message_id, chat_id=None):
     """Fault and recovery: reply with progress, update it, preserve threaded context."""
     from .feishu_client import reply_card, update_card
-    from .conversation_context import remember
+    from .conversation_context import remember, mark_pending, clear_pending
     if not message_id or not str(message_id).startswith("om_"):
         raise ValueError("missing original Feishu message id")
     event_id = str(event.get("event_id") or "")
@@ -368,6 +372,8 @@ async def analyze_on_demand(event, message_id, chat_id=None):
         progress_id = await reply_card(
             message_id, "AI 分析中",
             "**分析对象**  " + question[:240] + "\n\n⏳ 正在查询 Zabbix MCP 并进行分析……")
+        if chat_id:
+            mark_pending(chat_id, progress_id)
         log.info("ALERT_AI_PROGRESS_SENT event_id=%s recovery=%s", event_id, is_recovery)
     except Exception:
         log.exception("ALERT_AI_PROGRESS_FAILED event_id=%s", event_id)
@@ -407,7 +413,14 @@ async def analyze_on_demand(event, message_id, chat_id=None):
                     log.warning("ALERT_AI_CONTEXT_CHAT_AMBIGUOUS event_id=%s matches=%s",
                                 event_id, len(rows))
             if chat_id:
-                remember(chat_id, message_id, progress_id, question, detail, root_id=message_id)
+                original = ("原始告警消息：事件ID=" + event_id
+                            + "；主机=" + str(event.get("host_name") or "")
+                            + "；IP=" + str(event.get("host_ip") or "")
+                            + "；告警=" + str(event.get("event_name") or "")
+                            + "；事件值=" + str(event.get("latest_value") or ""))
+                remember(chat_id, message_id, progress_id, question, detail,
+                         parent_context={"origin": original, "turns": []},
+                         root_id=message_id)
                 log.info("ALERT_AI_CONTEXT_SAVED event_id=%s recovery=%s", event_id, is_recovery)
             else:
                 log.warning("ALERT_AI_CONTEXT_CHAT_MISSING event_id=%s", event_id)
