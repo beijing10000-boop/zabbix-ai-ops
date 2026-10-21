@@ -189,3 +189,31 @@ def test_recovery_sent_only_for_original_feishu_sent_problem(monkeypatch):
     result=asyncio.run(worker.handle_alert({"event_id":"paired001","event_value":"0","severity":"2"}))
     assert result["notified"] is True
     assert len(sent)==1
+
+def test_mute_summary_follows_action_buttons():
+    event={"event_id":"773310","host_id":"101","trigger_id":"202","severity":"2",
+           "event_value":"1","event_name":"CPU high"}
+    card=worker.make_card(event,mute_info={"operator":"ou_admin","duration":"4 小时",
+        "time":"2026-10-21 10:00:00","expires":"2026-10-21 14:00:00"})
+    assert card["config"]["update_multi"] is True
+    assert "临时屏蔽仅影响后续飞书通知" not in str(card)
+    labels=[e for e in card["elements"] if e["tag"]=="div"]
+    assert labels[1]["text"]["content"]=="**告警操作**"
+    assert "ou_admin" in labels[-1]["text"]["content"]
+    assert "4 小时" in labels[-1]["text"]["content"]
+
+def test_manual_analysis_replies_to_original_card(monkeypatch):
+    from app import feishu_client
+    sent=[]
+    async def analyze(event):
+        return {"cause":"负载较高","action":"检查进程","analysis":"CPU趋势连续上升"}
+    async def reply(message_id,title,detail):
+        sent.append((message_id,title,detail))
+    monkeypatch.setattr(worker,"analyze",analyze)
+    monkeypatch.setattr(feishu_client,"reply_card",reply)
+    result=asyncio.run(worker.analyze_on_demand(
+        {"event_id":"773311","severity":"2","event_value":"1"},"om_original"))
+    assert result["diagnosed"]
+    assert len(sent)==1
+    assert sent[0][0]=="om_original"
+    assert "CPU趋势连续上升" in sent[0][2]
