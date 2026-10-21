@@ -35,8 +35,9 @@ async def analyze(event):
     # evidence unless it has been fetched by that adapter.
     from .mcp_runtime import run
     prompt = alert_instructions(cfg("ai_alert_prompt"))
-    raw = (await run(prompt, json.dumps({"alert": event}, ensure_ascii=False),
-                     model=model)).strip()
+    raw, token_usage = await run(prompt, json.dumps({"alert": event}, ensure_ascii=False),
+                                 model=model, return_usage=True)
+    raw = raw.strip()
     try:
         data = json.loads(re.sub(r"^\x60\x60\x60(?:json)?\s*|\s*\x60\x60\x60$", "", raw))
         if not isinstance(data, dict):
@@ -44,6 +45,7 @@ async def analyze(event):
     except (ValueError, TypeError):
         data = {"cause": "分析结果需要人工复核", "action": "请检查告警相关指标及服务日志",
                 "analysis": raw[:500], "human_required": True, "host_groups": "未查到"}
+    data["_token_usage"] = token_usage
     return data
 
 def safe(value,n):
@@ -179,6 +181,11 @@ def make_card(event, info=None, *, analysis=False, mute_info=None):
                 elements.append({"tag":"hr"})
                 elements.append({"tag":"div","text":{"tag":"lark_md",
                     "content": "**"+label+"**\n"+safe(detail,size)}})
+    if analysis:
+        from .mcp_runtime import format_usage
+        elements.append({"tag": "hr"})
+        elements.append({"tag": "div", "text": {"tag": "lark_md",
+                         "content": format_usage(info.get("_token_usage"))}})
     return {
         "config":{"wide_screen_mode":True,"update_multi":True},
         "header":{"title":{"tag":"plain_text","content":title},
@@ -359,6 +366,8 @@ async def analyze_on_demand(event, message_id):
                            for label, field, size in (("故障原因", "cause", 120),
                                                       ("处理建议", "action", 160),
                                                       ("AI 分析", "analysis", 500)))
+        from .mcp_runtime import format_usage
+        detail += "\n\n---\n" + format_usage(result.get("_token_usage"))
         if progress_id:
             try:
                 await update_card(progress_id, "AI 分析结果", detail)
