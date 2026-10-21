@@ -86,6 +86,11 @@ def connection():
         columns = {row[1] for row in db.execute("PRAGMA table_info(alert_events)")}
         if "event_json" not in columns:
             db.execute("ALTER TABLE alert_events ADD COLUMN event_json TEXT")
+        for table in ("alert_events", "ai_questions"):
+            existing = {row[1] for row in db.execute("PRAGMA table_info(" + table + ")")}
+            for field in ("token_total", "token_input", "token_output"):
+                if field not in existing:
+                    db.execute("ALTER TABLE " + table + " ADD COLUMN " + field + " INTEGER")
         db.execute("CREATE INDEX IF NOT EXISTS ix_ai_questions_created ON ai_questions(id DESC)")
         db.execute("DELETE FROM settings WHERE key IN ('write_enabled','write_mcp_url','write_mcp_token','ai_approver_open_ids','min_severity','ai_prompt')")
         db.execute("CREATE TABLE IF NOT EXISTS alert_message_links (event_id TEXT NOT NULL, chat_id TEXT NOT NULL, message_id TEXT NOT NULL, PRIMARY KEY(event_id,chat_id))")
@@ -257,7 +262,7 @@ def update_settings(body: SettingsUpdate):
             db.execute("INSERT INTO audit(action,key) VALUES(?,?)", ("settings_update", key))
     return {"ok": True}
 
-def record_ai_question(source, request_id, question, status="pending", error_type=None):
+def record_ai_question(source, request_id, question, status="pending", error_type=None, token_usage=None):
     if source not in ("feishu", "web") or status not in ("pending", "running", "success", "failed"):
         raise ValueError("invalid question metrics")
     with connection() as db:
@@ -267,6 +272,23 @@ def record_ai_question(source, request_id, question, status="pending", error_typ
             status=excluded.status, error_type=excluded.error_type,
             completed_at=excluded.completed_at""",
             (source,str(request_id)[:120],str(question)[:500],status,error_type,status))
+        if status == "success" and token_usage:
+            save_token_usage(db, "ai_questions", "source=? AND request_id=?",
+                             (source, str(request_id)[:120]), token_usage)
+
+def save_token_usage(db, table, where, keys, usage):
+    """Persist provider-reported complete usage; never estimate missing totals."""
+    if table not in ("ai_questions", "alert_events"):
+        raise ValueError("invalid token usage table")
+    if not isinstance(usage, dict) or usage.get("available") is not True:
+        return
+    values = [usage.get(k) for k in ("total", "input", "output")]
+    if any(not isinstance(v, int) or isinstance(v, bool) or v < 0 for v in values):
+        return
+    db.execute("UPDATE " + table +
+               " SET token_total=?, token_input=?, token_output=? WHERE " + where,
+               (*values, *keys))
+
 
 
 @app.get("/api/v1/qa-stats", dependencies=[Depends(require_admin)])
@@ -281,12 +303,12 @@ def qa_stats():
 @app.get("/api/v1/qa-events", dependencies=[Depends(require_admin)])
 def qa_events(limit:int=100,offset:int=0):
     with connection() as db:
-        rows=db.execute("""SELECT source,request_id,question,status,created_at,completed_at,error_type
+        rows=db.execute("""SELECT source,request_id,question,status,created_at,completed_at,error_type,token_total,token_input,token_output
             FROM ai_questions ORDER BY id DESC LIMIT ? OFFSET ?""",
             (min(max(limit,1),200),max(offset,0))).fetchall()
     return [{"source":r[0],"request_id":r[1],"question":r[2],"status":r[3],
              "created_at":beijing_time(r[4]),"completed_at":beijing_time(r[5]),
-             "error_type":r[6]} for r in rows]
+             "error_type":r[6],"token_total":r[7],"token_input":r[8],"token_output":r[9]} for r in rows]
 
 
 class MuteRequest(BaseModel):
@@ -338,8 +360,8 @@ def alert_events(kind: str = "problems", limit: int = 100, offset: int = 0):
     offset = max(offset,0)
     clause = "event_value='1'" if kind == "problems" else "event_value='0'" if kind == "recoveries" else "ai_status IN ('pending','running','success','failed')"
     with connection() as db:
-        rows = db.execute(f"""SELECT event_id,event_value,event_name,host_name,severity,received_at,notify_status,ai_status FROM alert_events WHERE {clause} ORDER BY id DESC LIMIT ? OFFSET ?""",(limit,offset)).fetchall()
-    return [{"event_id":r[0],"event_value":r[1],"event_name":r[2],"host_name":r[3],"severity":r[4],"received_at":beijing_time(r[5]),"notify_status":r[6],"ai_status":r[7]} for r in rows]
+        rows = db.execute(f"""SELECT event_id,event_value,event_name,host_name,severity,received_at,notify_status,ai_status,token_total,token_input,token_output FROM alert_events WHERE {clause} ORDER BY id DESC LIMIT ? OFFSET ?""",(limit,offset)).fetchall()
+    return [{"event_id":r[0],"event_value":r[1],"event_name":r[2],"host_name":r[3],"severity":r[4],"received_at":beijing_time(r[5]),"notify_status":r[6],"ai_status":r[7],"token_total":r[8],"token_input":r[9],"token_output":r[10]} for r in rows]
 
 
 @app.get("/api/v1/audit", dependencies=[Depends(require_admin)])
@@ -465,8 +487,8 @@ async def ask_web(body: AskRequest):
     record_ai_question("web", request_id, body.question, "running")
     try:
         import asyncio
-        answer = await asyncio.wait_for(ask(body.question), timeout=180)
-        record_ai_question("web", request_id, body.question, "success")
+        answer, usage = await asyncio.wait_for(ask(body.question, return_usage=True), timeout=180)
+        record_ai_question("web", request_id, body.question, "success", token_usage=usage)
         return {"ok": True, "answer": answer}
     except Exception as exc:
         record_ai_question("web", request_id, body.question, "failed", type(exc).__name__)
