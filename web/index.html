@@ -11,11 +11,10 @@
 <button data-page="logs" data-ui-click="4"><i>≡</i>运行日志</button></nav><div class="side-foot">Zabbix AI Ops · Production<br><span id="app-version">版本加载中…</span></div></aside>
 <main class="main"><header class="top"><div><h1 id="pagetitle">总览仪表盘</h1><div class="sub">智能告警分析 · Zabbix MCP · 飞书协作</div></div><div class="user"><span class="pill">● 已安全登录</span><div class="avatar" id="avatar">A</div><span id="username">管理员</span><button class="secondary danger" data-ui-click="5">退出</button></div></header>
 <section class="page active" id="dashboard"><div class="stats"><div class="stat"><div class="k">数据库</div><div class="n" id="db-state">—</div></div><div class="stat"><div class="k">Redis 状态</div><div class="n" id="redis-state">—</div></div><div class="stat"><div class="k">告警待处理</div><div class="n" id="alert-count">—</div></div><div class="stat"><div class="k">问答待处理</div><div class="n" id="qa-count">—</div></div></div>
-<div class="stats" data-ui-style="3">
+<div class="stats">
 <div class="stat metric" role="button" tabindex="0" data-ui-click="6" data-ui-key="7"><div class="k">接收告警数量 · 查看明细 →</div><div class="n" id="metric-problems">—</div></div>
 <div class="stat metric" role="button" tabindex="0" data-ui-click="8" data-ui-key="9"><div class="k">接收恢复数量 · 查看明细 →</div><div class="n" id="metric-recoveries">—</div></div>
 <div class="stat metric" role="button" tabindex="0" data-ui-click="10" data-ui-key="11"><div class="k">自动 AI 分析 · 查看明细 →</div><div class="n" id="metric-ai">—</div></div>
-</div><div class="stats" data-ui-style="4">
 <div class="stat metric" role="button" tabindex="0" data-ui-click="12" data-ui-key="13"><div class="k">AI 问答数量（飞书 + Web）· 查看明细 →</div><div class="n" id="metric-qa">—</div><div id="metric-qa-breakdown" class="sub">成功 / 失败 / 执行中</div></div></div>
 <div class="panel" id="qa-detail" data-ui-style="5"><h2>AI 问答明细</h2><p class="sub">按时间倒序，包含飞书和网页问答。不会记录 AI 的完整回答。</p><button class="secondary" data-ui-click="14">关闭明细</button><div data-ui-style="6"><table class="table"><thead><tr><th>提交时间</th><th>来源</th><th>提问内容</th><th>执行状态</th><th>完成时间</th><th>失败类型</th></tr></thead><tbody id="qa-detail-body"></tbody></table></div></div>
 <div class="panel" id="metric-detail" data-ui-style="5"><h2 id="metric-detail-title">事件明细</h2><p class="sub">按接收时间倒序，显示最近 100 条。</p><button class="secondary" data-ui-click="15">关闭明细</button><div data-ui-style="6"><table class="table"><thead><tr><th>接收时间</th><th>事件 ID</th><th>主机</th><th>事件名称</th><th>级别</th><th>通知状态</th><th>AI 状态</th></tr></thead><tbody id="metric-detail-body"></tbody></table></div></div>
