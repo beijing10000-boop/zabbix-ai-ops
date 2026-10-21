@@ -125,31 +125,35 @@ def make_card(event, info=None, *, analysis=False, mute_info=None):
         "**事件 ID**  " + safe(event.get("event_id"), 40),
     ])
     link = zabbix_event_link(event)
-    if link:
-        lines.append("**事件来源**  [查看 Zabbix 告警 ↗](" + link + ")")
-    else:
-        lines.append("**事件来源**  Zabbix")
     elements = [
         {"tag":"div", "text":{"tag":"lark_md", "content":"\n".join(lines)}}
     ]
-    if not recovery and not analysis:
+    if not analysis:
         host_id = str(event.get("host_id") or "")
         trigger_id = str(event.get("trigger_id") or "")
         event_id = str(event.get("event_id") or "")
-        if host_id.isdigit() and trigger_id.isdigit() and event_id.isdigit():
+        actions = []
+        if link:
+            actions.append({"tag": "button",
+                "text": {"tag": "plain_text", "content": "🔗 事件来源"},
+                "type": "default", "url": link})
+        if event_id.isdigit() and trigger_id.isdigit():
             from .alert_mute import action_signature
+            if not recovery and host_id.isdigit():
+                actions.append({"tag": "button",
+                    "text": {"tag": "plain_text", "content": "🔕 暂时屏蔽"},
+                    "type": "default", "value": {"op": "choose_mute",
+                        "event_id": event_id, "trigger_id": trigger_id,
+                        "sig": action_signature(event_id, trigger_id, 0)}})
+            actions.append({"tag": "button",
+                "text": {"tag": "plain_text", "content": "🤖 AI分析"},
+                "type": "primary", "value": {"op": "analyze_alert",
+                    "event_id": event_id, "trigger_id": trigger_id,
+                    "event_value": "0" if recovery else "1",
+                    "sig": action_signature(event_id, trigger_id, 0)}})
+        if actions:
             elements.append({"tag": "hr"})
-            # Feishu v1 cards prohibit action components inside column_set.
-            # Keep the two buttons in one top-level action row.
-            elements.append({"tag": "div", "text": {"tag": "lark_md", "content": "**告警操作**"}})
-            elements.append({"tag": "action", "actions": [
-                {"tag": "button", "text": {"tag": "plain_text", "content": "🔕 暂时屏蔽"},
-                 "type": "default", "value": {"op": "choose_mute", "event_id": event_id,
-                     "trigger_id": trigger_id, "sig": action_signature(event_id, trigger_id, 0)}},
-                {"tag": "button", "text": {"tag": "plain_text", "content": "🤖 AI分析"},
-                 "type": "primary", "value": {"op": "analyze_alert", "event_id": event_id,
-                     "trigger_id": trigger_id, "sig": action_signature(event_id, trigger_id, 0)}}
-            ]})
+            elements.append({"tag": "action", "actions": actions})
     if mute_info and not recovery:
         elements.append({"tag": "hr"})
         mute_section = {"tag": "div", "text": {"tag": "lark_md",
