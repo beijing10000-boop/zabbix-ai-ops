@@ -34,17 +34,19 @@ async def execute(chat_id, question, message_id, sender_open_id=None, parent_id=
                     log.info("FEISHU_REPLIED_ALERT message_id=%s event_id=%s", message_id, event_id)
             except Exception:
                 log.exception("FEISHU_REPLY_LOOKUP_FAILED message_id=%s", message_id)
-        result = await ask(question, context)
+        from .mcp_runtime import format_usage
+        result, usage = await ask(question, context, return_usage=True)
+        display_result = result + "\n\n---\n" + format_usage(usage)
         record_ai_question("feishu", message_id, question, "success")
         remember(chat_id, message_id, progress_id, question, result, stored)
         if progress_id:
             try:
-                await update_card(progress_id, "AI 分析完成", result)
+                await update_card(progress_id, "AI 分析完成", display_result)
                 log.info("FEISHU_CARD_UPDATED message_id=%s", message_id)
                 return
             except Exception:
                 log.exception("FEISHU_CARD_UPDATE_FAILED message_id=%s", message_id)
-        await reply_card(message_id, "AI 分析完成", result)
+        await reply_card(message_id, "AI 分析完成", display_result)
     except Exception as exc:
         record_ai_question("feishu", message_id, question, "failed", type(exc).__name__)
         log.exception("FEISHU_QA_FAILED message_id=%s", message_id)
