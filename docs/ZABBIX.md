@@ -53,3 +53,7 @@ Webhook JSON 新增可选字段 `latest_value`，故障和恢复事件均可设�
 ```
 
 在 Zabbix 告警媒介类型的 Webhook 参数中添加 `latest_value`，值使用 `{ITEM.LASTVALUE1}`。注意它表示触发器表达式中的第一个监控项的最近值，单位应由发送方提供；多监控项表达式未必对应用户期望的指标。对于恢复事件，Zabbix 如提供合适的 `recovery_value` 可作为兜底，优先级仍是 `latest_value`。对于已有未包含此字段的事件，卡片显示“未提供”而不虚构数值。修改 webhook 参数后应分别触发新故障和恢复告警检查宏展开效果。
+
+## 飞书卡片事件详情
+
+在 Zabbix Webhook 参数里添加 `event_detail`，值设为 `{EVENT.OPDATA}`（触发器 Operational data），例如 `Current state: down (2)`。若触发器未设置 Operational data，请在触发器或触发器原型中配置，例如 `Current state: {ITEM.LASTVALUE1}`。需要确认故障和恢复通知均能展开宏；未提供 `event_detail` 时兼容使用原 `latest_value`（恢复还可回退 `recovery_value`）。
