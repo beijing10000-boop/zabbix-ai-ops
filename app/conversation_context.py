@@ -6,11 +6,12 @@ from .main import REDIS_URL
 TTL = 1800
 MAX_DEPTH = 10
 PREFIX = "feishu-ai:context:"
+THREAD_PREFIX = "feishu-ai:thread:"
 
 def _client():
     return Redis.from_url(REDIS_URL, decode_responses=True)
 
-def remember(chat_id, source_id, reply_id, question, answer, parent_context=None):
+def remember(chat_id, source_id, reply_id, question, answer, parent_context=None, root_id=None):
     if not chat_id or not source_id:
         return
     previous = (parent_context or {}).get("turns", [])[-(MAX_DEPTH - 1):]
@@ -21,6 +22,8 @@ def remember(chat_id, source_id, reply_id, question, answer, parent_context=None
     for message_id in (source_id, reply_id):
         if message_id:
             client.set(PREFIX + message_id, encoded, ex=TTL)
+    if root_id:
+        client.set(THREAD_PREFIX + chat_id + ":" + root_id, encoded, ex=TTL)
 
 def recall(chat_id, parent_id):
     if not parent_id:
@@ -33,6 +36,21 @@ def recall(chat_id, parent_id):
         if payload.get("chat_id") != chat_id:
             return None
         if not isinstance(payload.get("turns"), list):
+            return None
+        return payload
+    except (ValueError, TypeError):
+        return None
+
+def recall_thread(chat_id, root_id):
+    """Recover latest context in a Feishu reply thread, scoped to one chat."""
+    if not chat_id or not root_id:
+        return None
+    data = _client().get(THREAD_PREFIX + chat_id + ":" + root_id)
+    if not data:
+        return None
+    try:
+        payload = json.loads(data)
+        if payload.get("chat_id") != chat_id or not isinstance(payload.get("turns"), list):
             return None
         return payload
     except (ValueError, TypeError):
