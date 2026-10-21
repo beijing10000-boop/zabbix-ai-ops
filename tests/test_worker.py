@@ -316,3 +316,12 @@ def test_automatic_analysis_card_shows_token_usage():
           "_token_usage":{"input":750,"output":250,"total":1000,"available":True}}
     card=worker.make_card(event,info,analysis=True)
     assert "本轮 Token 消耗：1,000（输入 750 / 输出 250）" in str(card)
+
+def test_token_footer_separate_from_body_in_feishu_card():
+    from app.feishu_client import make_card
+    card = make_card("AI 分析结果", "故障原因：测试\n\n---\n本轮 Token 消耗：1,234（输入 1,000 / 输出 234）")
+    assert len(card["elements"]) == 3
+    assert card["elements"][1]["tag"] == "hr"
+    assert "Token 消耗" not in card["elements"][0]["text"]["content"]
+    assert "color='grey'" in card["elements"][2]["text"]["content"]
+    assert "1,234" in card["elements"][2]["text"]["content"]
