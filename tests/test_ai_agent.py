@@ -72,3 +72,13 @@ def test_native_tools_are_not_filtered():
     definitions=mcp_runtime.native_tools(remote)
     assert [tool["name"] for tool in definitions]==["graph_get","custom_mcp_tool"]
     assert definitions[0]["parameters"]==remote[0].inputSchema
+
+def test_token_usage_aggregation_helpers():
+    from types import SimpleNamespace
+    first=SimpleNamespace(usage=SimpleNamespace(input_tokens=120, output_tokens=30, total_tokens=150))
+    second=SimpleNamespace(usage={"input_tokens":80,"output_tokens":20,"total_tokens":100})
+    assert mcp_runtime.usage_counts(first)=={"input":120,"output":30,"total":150}
+    assert mcp_runtime.usage_counts(second)=={"input":80,"output":20,"total":100}
+    assert mcp_runtime.usage_counts(SimpleNamespace(usage=None)) is None
+    assert "250" in mcp_runtime.format_usage({"input":200,"output":50,"total":250,"available":True})
+    assert "未返回用量" in mcp_runtime.format_usage({"available":False})
