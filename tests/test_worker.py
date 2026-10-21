@@ -198,9 +198,9 @@ def test_mute_summary_follows_action_buttons():
     assert card["config"]["update_multi"] is True
     assert "临时屏蔽仅影响后续飞书通知" not in str(card)
     assert any(el["tag"]=="column_set" for el in card["elements"])
-    assert "ou_admin" in str(card["elements"][-2])
-    assert "4 小时" in str(card["elements"][-2])
-    assert card["elements"][-1]["actions"][0]["value"]["op"]=="unmute_alert"
+    assert "ou_admin" in str(card["elements"][-1])
+    assert "4 小时" in str(card["elements"][-1])
+    assert card["elements"][-1]["extra"]["value"]["op"]=="unmute_alert"
 
 def test_manual_analysis_replies_to_original_card(monkeypatch):
     from app import feishu_client
