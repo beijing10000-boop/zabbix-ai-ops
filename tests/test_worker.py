@@ -251,13 +251,13 @@ def test_feishu_card_does_not_nest_action_inside_column():
     card=make_card(event)
     assert any(el["tag"]=="action" for el in card["elements"])
     assert not any(el["tag"]=="column_set" for el in card["elements"])
-    assert [b["value"]["op"] for e in card["elements"] if e["tag"]=="action" for b in e["actions"]] == ["choose_mute","analyze_alert"]
+    assert [b["value"]["op"] for e in card["elements"] if e["tag"]=="action" for b in e["actions"]] == ["analyze_alert","choose_mute"]
 
 def test_source_button_precedes_actions_for_problem_and_recovery():
     event={"event_id":"6180279","host_id":"101","trigger_id":"202","severity":"3","event_value":"1"}
     problem=worker.make_card(event)
     recovery=worker.make_card({**event,"event_value":"0"})
-    for card, expected in ((problem,["url","choose_mute","analyze_alert"]),
+    for card, expected in ((problem,["url","analyze_alert","choose_mute"]),
                            (recovery,["url","analyze_alert"])):
         assert "**告警操作**" not in str(card)
         buttons=next(e["actions"] for e in card["elements"] if e["tag"]=="action")
