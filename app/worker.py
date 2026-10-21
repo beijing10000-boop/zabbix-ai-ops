@@ -184,8 +184,8 @@ def make_card(event, info=None, *, analysis=False, mute_info=None):
     if analysis:
         from .mcp_runtime import format_usage
         elements.append({"tag": "hr"})
-        elements.append({"tag": "div", "text": {"tag": "lark_md",
-                         "content": "<font color=\'grey\'>◉ " + format_usage(info.get("_token_usage")) + "</font>"}})
+        elements.append({"tag": "note", "elements": [{"tag": "plain_text",
+                         "content": "◉ " + format_usage(info.get("_token_usage"))}]})
     return {
         "config":{"wide_screen_mode":True,"update_multi":True},
         "header":{"title":{"tag":"plain_text","content":title},
