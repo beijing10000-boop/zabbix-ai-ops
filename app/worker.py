@@ -332,8 +332,6 @@ async def handle_alert(event):
         return {"event_id":event["event_id"],"notified":True,"diagnosed":False,"ai_failed":True}
     try:
         await notify(make_card(event,analysis,analysis=True))
-        if chat_id:
-            clear_pending(chat_id, progress_id)
         update_event(event, ai_status="success")
     except Exception:
         if chat_id:
