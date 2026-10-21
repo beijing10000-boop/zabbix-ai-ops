@@ -18,7 +18,7 @@ def test_choose_mute_requires_admin_and_offers_five_durations(monkeypatch):
     assert handle_choose_mute(value, "ou_other")[0] is False
     ok, message, card = handle_choose_mute(value, "ou_admin")
     assert ok and "时长" in message
-    assert card["config"]["update_multi"] is False
+    assert card["config"]["update_multi"] is True
     buttons = card["elements"][-1]["actions"]
     assert len(buttons) == 5
     assert {a["value"]["hours"] for a in buttons} == {1,4,24,72,168}
